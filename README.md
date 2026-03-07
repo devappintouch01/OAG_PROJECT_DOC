@@ -1,4 +1,3 @@
-#  OAG PROJECT DOC
 ## Documentation
 ### 25-02-2026
 - [สรุปปัญหา](20260225/สรุปปัญหา.md)
