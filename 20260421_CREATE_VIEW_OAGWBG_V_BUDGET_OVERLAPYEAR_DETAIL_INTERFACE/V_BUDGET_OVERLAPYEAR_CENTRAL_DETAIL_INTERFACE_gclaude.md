@@ -4,6 +4,15 @@
 > **วันที่วิเคราะห์:** 2026-04-22
 > **Schema:** OAGWBG (Oracle EBS PRE — 172.16.11.19:1541)
 
+<style scoped>
+table {
+  font-size: 13px;
+}
+li {
+  font-size: 13px;
+}
+</style>
+
 ---
 
 ## 1. ภาพรวม View

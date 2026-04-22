@@ -2,6 +2,15 @@
 
 อ้างอิงจาก view จริงในฐานข้อมูล `OAGWBG.OAGWBG_V_BUDGET_OVERLAPYEAR_CENTRAL_DETAIL_INTERFACE` ที่ตรวจสอบเมื่อวันที่ `2026-04-22`
 
+<style scoped>
+table {
+  font-size: 13px;
+}
+li {
+  font-size: 13px;
+}
+</style>
+
 ## 1. สรุปการทำงานของ view
 
 view นี้สร้างข้อมูล interface สำหรับรายการเงินกันเหลื่อมปี โดยมี logic หลักดังนี้

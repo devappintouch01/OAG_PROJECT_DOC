@@ -1,3 +1,12 @@
+<style scoped>
+table {
+  font-size: 13px;
+}
+li {
+  font-size: 13px;
+}
+</style>
+
 ## Documentation
 
 | วันที่ | ประเภท | เอกสาร |

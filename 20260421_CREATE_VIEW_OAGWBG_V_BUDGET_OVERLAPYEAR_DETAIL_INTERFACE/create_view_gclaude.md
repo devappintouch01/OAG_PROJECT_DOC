@@ -4,6 +4,15 @@
 > **อ้างอิงจาก:** `OAGWBG_V_BUDGET_OVERLAPYEAR_CENTRAL_DETAIL_INTERFACE`  
 > **Schema:** OAGWBG (Oracle EBS PRE — 172.16.11.19:1541)
 
+<style scoped>
+table {
+  font-size: 13px;
+}
+li {
+  font-size: 13px;
+}
+</style>
+
 ---
 
 ## 1. สรุป Conditions ที่เปลี่ยนแปลงจาก View เดิม

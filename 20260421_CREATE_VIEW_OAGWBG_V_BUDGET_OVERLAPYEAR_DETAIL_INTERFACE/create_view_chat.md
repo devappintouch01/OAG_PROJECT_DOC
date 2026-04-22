@@ -2,6 +2,15 @@
 
 อ้างอิงการสร้าง view ใหม่ `OAGWBG.OAGWBG_V_BUDGET_OVERLAPYEAR_DETAIL_INTERFACE` เมื่อวันที่ `2026-04-22`
 
+<style scoped>
+table {
+  font-size: 13px;
+}
+li {
+  font-size: 13px;
+}
+</style>
+
 ## ผลการสร้าง
 
 - สร้าง view ในฐานข้อมูล `ebs_PRE` สำเร็จแล้ว
