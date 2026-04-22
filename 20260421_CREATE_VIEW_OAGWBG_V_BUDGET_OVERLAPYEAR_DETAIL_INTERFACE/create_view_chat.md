@@ -8,15 +8,22 @@
 - ชื่อ view: `OAGWBG.OAGWBG_V_BUDGET_OVERLAPYEAR_DETAIL_INTERFACE`
 - จำนวนคอลัมน์: `42`
 - ตัดคอลัมน์ `ENCUMBRANCE_TYPE` ออกตาม requirement
-- ตรวจสอบหลังสร้างแล้ว query ผ่าน แต่ข้อมูลปัจจุบันใน PRE ได้ `0` แถว
-- สาเหตุที่ได้ `0` แถวใน PRE ตอนนี้: ข้อมูล `OAGWBG_BUDGETRESERVEDITEM` ที่ join กับ `OAGWBG_BUDGETRESERVED` และมี `BUDGETRESERVEDREGION = 'P'` ยังไม่มีรายการที่ `ROUNDINTERFACE IS NOT NULL`
+- ปรับ view รอบล่าสุดแล้ว และข้อมูลปัจจุบันใน PRE ออก `52` แถว
+- สาเหตุที่ version แรกได้ `0` แถว: ข้อมูล `OAGWBG_BUDGETRESERVEDITEM` ที่ join กับ `OAGWBG_BUDGETRESERVED` และมี `BUDGETRESERVEDREGION = 'P'` ยังไม่มีรายการที่ `ROUNDINTERFACE IS NOT NULL`
+- ข้อสรุปจากข้อมูลจริงใน PRE
+  - `BUDGETRESERVEDREGION = 'P'` มี `26` รายการ
+  - `ROUNDINTERFACE IS NOT NULL` สำหรับ region `P` มี `0` รายการ
+  - ถ้าคง filter `ROUNDINTERFACE IS NOT NULL` ไว้ จะไม่มีข้อมูลออกจาก view แน่นอน
 
 ## สรุป logic ที่ใช้
 
 - ยึดโครงสร้างหลักตาม view เดิม `OAGWBG_V_BUDGET_OVERLAPYEAR_CENTRAL_DETAIL_INTERFACE`
 - เปลี่ยน source หลักจาก `OAGWBG_BUDGETRESERVED_CATEGORY` เป็น `OAGWBG_BUDGETRESERVEDITEM`
 - บังคับเงื่อนไขที่หัวรายการ `OAGWBG_BUDGETRESERVED.BUDGETRESERVEDREGION = 'P'`
-- คงเงื่อนไขหลัก `BRS.ROUNDINTERFACE IS NOT NULL`
+- ตัดเงื่อนไข `BRS.ROUNDINTERFACE IS NOT NULL` ออกจาก view ใหม่
+  - เพราะชนกับ requirement ที่บังคับ `BUDGETRESERVEDREGION = 'P'`
+  - ข้อมูลจริงใน PRE ยืนยันว่าฝั่ง `P` ไม่มีค่า `ROUNDINTERFACE`
+- คงเงื่อนไขหลักที่ยังใช้ได้จาก view เดิมไว้ เช่น การแตก record เป็น `BG` และ `ENC`, การคำนวณ `DEFAULT_EFFECTIVE_DATE`, และโครงสร้าง output interface
 - ยังแตกข้อมูลเป็น 2 record ต่อ 1 รายการด้วย `TYPE_MAP`
   - `ENC` ใช้ `ACTUAL_FLAG = 'E'`
   - `BG` ใช้ `ACTUAL_FLAG = 'B'`
@@ -48,6 +55,20 @@
 - แต่ฝั่ง `OAGWBG_BUDGETRESERVEDITEM` ไม่มี foreign key ระดับ item ใน `OAGWBG_BUDGETRECEIVE`
 - ตาราง `OAGWBG_BUDGETRECEIVE` มี `BUDGETRESERVEDID` และ `BUDGETRESERVEDCATEGORYID` แต่ไม่มี `BUDGETRESERVEDITEMID`
 - ดังนั้นใน view ใหม่นี้จึง generate `WEB_BATCH_NO` และ `REFERENCE1` จาก format โดยตรง เพื่อไม่ให้เกิดการ join ซ้ำหรือ mapping ผิดระดับข้อมูล
+
+## หมายเหตุเรื่อง requirement ที่ขัดกัน
+
+requirement ชุดนี้มีจุดขัดกันอยู่ 1 จุด
+
+- ข้อ `2.1` ต้องการใช้ major condition ตาม view เดิม
+- แต่ข้อ `2.12` และ `2.13` บังคับให้ใช้ข้อมูลฝั่ง `BUDGETRESERVEDREGION = 'P'` และ `OAGWBG_BUDGETRESERVEDITEM`
+
+เมื่อเช็กข้อมูลจริงใน PRE แล้ว พบว่า
+
+- ฝั่งเดิมของ view central ใช้ `ROUNDINTERFACE IS NOT NULL`
+- แต่ฝั่ง `P` ไม่มีแถวที่ผ่าน condition นี้เลย
+
+ดังนั้นเพื่อให้ view ใหม่มีข้อมูลออกจริง จึงจำเป็นต้องเอา `ROUNDINTERFACE IS NOT NULL` ออก
 
 ## Dependencies ของ view ใหม่
 
