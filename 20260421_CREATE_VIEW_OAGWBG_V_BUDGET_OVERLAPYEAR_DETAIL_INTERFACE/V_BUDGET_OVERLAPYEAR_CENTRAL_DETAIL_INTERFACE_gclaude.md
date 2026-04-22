@@ -159,51 +159,51 @@ ORDER BY B.TRANSFERNO, B.ID, T.ACTUAL_FLAG DESC
 
 > **ผลการตรวจสอบ:** Excel มีทุก field ครบ **43/43 columns** ✅
 
-| # | Column Name | Data Type | คำอธิบาย (Description) | Lookup (ที่มา) | Condition / Logic |
-|---|---|---|---|---|---|
-| 1 | WEB_BATCH_NO | VARCHAR2(255) | Batch Name ส่ง Interface | `RBN.BATCHNAME` ← `OAGWBG_RECEIVE_BATCH_NO` | `NVL(RBN.BATCHNAME, 'ENC_CARRY_FORWARD_'+BUDGETYEAR+'_'+YYYYMMDDHHMISS)` หรือ `BG_CARRY_FORWARD_...` ตาม DOC_TYPE |
-| 2 | USER_JE_SOURCE_NAME | CHAR(10) | Fixed ค่า JE Source | Fixed = `'Web Budget'` | ค่าคงที่ |
-| 3 | REFERENCE4 | VARCHAR2(478) | คำอธิบาย Header GL | `B.BUDGETYEAR`, `B.DEPARTMENTID`, `B.TRANSFERNO` ← OAGWBG_BUDGETRESERVED | `'เงินกันเหลื่อมปี '‖BUDGETYEAR‖'-'‖DEPARTMENTID‖' เลขที่เงินกัน '‖TRANSFERNO` |
-| 4 | REFERENCE5 | VARCHAR2(478) | คำอธิบาย Header GL (ซ้ำ) | เหมือน REFERENCE4 | ค่าเดียวกับ REFERENCE4 |
-| 5 | LEDGER_ID | VARCHAR2(4000) | รหัส Ledger Oracle GL | `SC.CONFIG_VALUE` ← `OAGWBG_SYSTEMCONFIG` | `WHERE SC.CONFIG_KEY = 'Ledger'` (ค่าปกติ = 2021) |
-| 6 | USER_JE_CATEGORY_NAME | VARCHAR2(16) | ชื่อ JE Category | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | ENC → `'Web Encumbrance'` / BG → `'Budget - เงินกัน'` |
-| 7 | TRANSFER_DATE | VARCHAR2(10) | วันที่โอน | `BRS.TRANSFERDATE` ← `OAGWBG_BUDGETRESERVED` | `TO_CHAR(B.TRANSFERDATE,'YYYY-MM-DD')` |
-| 8 | DEFAULT_EFFECTIVE_DATE | VARCHAR2(47) | วันที่มีผลบัญชี | `BRS.BUDGETYEAR` ← `OAGWBG_BUDGETRESERVED` | ENC → `(BUDGETYEAR-543)‖'-SEP-30'` / BG → `(BUDGETYEAR-543)‖'-OCT-01'` |
-| 9 | ACTUAL_FLAG | CHAR(1) | ประเภท GL Entry | `TYPE_MAP.ACTUAL_FLAG` | ENC → `'E'` / BG → `'B'` |
-| 10 | BUDGET_ENCUMBRANCE_NAME | VARCHAR2(12) | ชื่อ Budget Version | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | BG → `'OAG_BG_FINAL'` / ENC → `''` |
-| 11 | CURRENCY_CODE | CHAR(3) | รหัสสกุลเงิน | Fixed = `'THB'` | ค่าคงที่ |
-| 12 | ATTRIBUTE3 | CHAR(0) | สำรอง (ว่าง) | Fixed = `''` | ค่าคงที่ว่าง |
-| 13 | ATTRIBUTE4 | VARCHAR2(255) | เลขที่เงินกัน (Attribute) | `BRS.TRANSFERNO` ← `OAGWBG_BUDGETRESERVED` | ค่าเดียวกับ TRANSFERNO |
-| 14 | LINE_NUMBER | NUMBER | ลำดับบรรทัด GL | `ROW_NUMBER()` | `PARTITION BY B.BUDGETRESERVEDID, T.DOC_TYPE ORDER BY B.CATEGORYID, B.BUDGETPLANID` |
-| 15 | SEGMENT1 | VARCHAR2(150) | หน่วยเบิกจ่าย | `BRS.DEPARTMENTID` ← `OAGWBG_BUDGETRESERVED` | ค่าตรง ไม่แปลงเพิ่ม |
-| 16 | SEGMENT2 | VARCHAR2(150) | ศูนย์ต้นทุน | `BRS.COSTCENTERID` ← `OAGWBG_BUDGETRESERVED` | ค่าตรง ไม่แปลงเพิ่ม |
-| 17 | SEGMENT3 | NUMBER | ปีงบประมาณ (2 หลัก) | `BRSC.BUDGETYEAR` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `MOD(B.BUDGETYEAR, 100)` เช่น 2568 → 68 |
-| 18 | SEGMENT4 | VARCHAR2(255) | แหล่งเงิน | `BRS.BUDGETSOURCEID` ← `OAGWBG_BUDGETRESERVED` | BG → Fixed `'400'` / ENC → `B.BUDGETSOURCEID` |
-| 19 | SEGMENT5 | VARCHAR2(5) | แผนงาน | `BRSC.BUDGETPLANID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `LPAD(NVL(CASE WHEN BUDGETPLANID=90000 THEN 0 ELSE BUDGETPLANID END,'0'),5,'0')` |
-| 20 | SEGMENT6 | VARCHAR2(5) | ผลผลิต/แผนงานรอง/โครงการ | `BRSC.PRODUCTID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `LPAD(NVL(TO_CHAR(PRODUCTID),'0'),5,'0')` |
-| 21 | SEGMENT7 | VARCHAR2(4000) | กิจกรรม | `BRSC.ACTIVITYID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าตรง |
-| 22 | SEGMENT8 | VARCHAR2(25) | ประเภทรายจ่าย | `EAR.BUDGETTYPEID` ← `OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V` | JOIN `BRSC.CATEGORYID = EAR.CATEGORYID` |
-| 23 | SEGMENT9 | VARCHAR2(150) | รหัสงบประมาณ | `BRSC.BUDGETCODEID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `NVL(BUDGETCODEID,'00000000000000000000')` |
-| 24 | SEGMENT10 | VARCHAR2(25) | รหัสบัญชีหลัก | `EAR.ACCOUNTNO` ← `OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V` | JOIN `BRSC.CATEGORYID = EAR.CATEGORYID` |
-| 25 | SEGMENT11 | VARCHAR2(25) | รหัสบัญชีย่อย/รายจ่ายย่อย | `EAR.SUBACCOUNTNO` ← `OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V` | JOIN `BRSC.CATEGORYID = EAR.CATEGORYID` |
-| 26 | SEGMENT12 | CHAR(2) | สำรอง 1 | Fixed = `'00'` | ค่าคงที่ |
-| 27 | SEGMENT13 | CHAR(3) | สำรอง 2 | Fixed = `'000'` | ค่าคงที่ |
-| 28 | ENTERED_DR | NUMBER | ยอดเงินงบประมาณที่กัน (DR) | `BRSC.TOTALRESERVEDAMOUNT` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ใช้ทั้ง BG และ ENC |
-| 29 | ACCOUNTED_DR | NUMBER | ยอดเงินบัญชี (DR) | `BRSC.TOTALRESERVEDAMOUNT` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | เหมือน ENTERED_DR |
-| 30 | ENTERED_CR | VARCHAR2(0) | — | Fixed = `NULL` | ค่าคงที่ NULL |
-| 31 | ACCOUNTED_CR | VARCHAR2(0) | — | Fixed = `NULL` | ค่าคงที่ NULL |
-| 32 | REFERENCE1 | VARCHAR2(255) | เลข WEB_BATCH_NO (ซ้ำ) | ใช้ logic เดียวกับ WEB_BATCH_NO | `NVL(RBN.BATCHNAME, 'ENC/BG_CARRY_FORWARD_'+BUDGETYEAR+'_'+TIMESTAMP)` |
-| 33 | CREATED_BY | NUMBER | รหัสผู้สร้าง | `BRSC.CREATEBY` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category |
-| 34 | LAST_UPDATED_BY | NUMBER | รหัสผู้แก้ไขล่าสุด | `BRSC.UPDATEBY` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category |
-| 35 | CREATION_DATE | TIMESTAMP(6) | วันที่สร้าง | `BRSC.CREATEON` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category |
-| 36 | LAST_UPDATE_DATE | TIMESTAMP(6) | วันที่แก้ไขล่าสุด | `BRSC.UPDATEON` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category |
-| 37 | REFERENCE10 | VARCHAR2(240) | คำอธิบายรายการ (ชื่อหมวด) | `CC.NAME` ← `OAGWBG_V_EXT_OAGINV_CATEGORY_CODES_V` | JOIN `CC.ID = BRSC.CATEGORYID` |
-| 38 | ENCUMBRANCE_TYPE | VARCHAR2(15) | ประเภท Encumbrance | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | ENC → `'Web Encumbrance'` / BG → `''` |
-| 39 | TRANSFERNO | VARCHAR2(255) | เลขที่เงินกัน | `BRS.TRANSFERNO` ← `OAGWBG_BUDGETRESERVED` | ค่าตรง |
-| 40 | RECEIPIENT_ACCOUNT | VARCHAR2(337) | รหัสบัญชีธนาคารผู้รับโอน | `BCC_RECEIVER.CASH_ACC` ← ผ่าน `OAGWBG_BUDGETRESERVED_BANKACCOUNT` → `OAGWBG_V_EXT_OAGCE_BANK_ACCOUNT_V` | ENC → `B.RECEIVER` / BG → `NULL`; JOIN `BCC_RECEIVER.BANK_ACCOUNT_ID = BRB.BANKACCOUNTRECEIVER` |
-| 41 | SENDER_ACCOUNT | VARCHAR2(337) | รหัสบัญชีธนาคารผู้โอน | `BCC_GIVER.CASH_ACC` ← ผ่าน `OAGWBG_BUDGETRESERVED_BANKACCOUNT` → `OAGWBG_V_EXT_OAGCE_BANK_ACCOUNT_V` | ENC → `NULL` / BG → `B.GIVER`; JOIN `BCC_GIVER.BANK_ACCOUNT_ID = BRB.BANKACCOUNTGIVER` |
-| 42 | TYPE | CHAR(1) | ทิศทางการโอน | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | ENC → `'O'` (โอนออก) / BG → `'I'` (รับโอน) |
-| 43 | TRANSFERTYPE | CHAR(8) | ชื่อประเภทการโอน (แยก View) | Fixed = `'CARRYFWD'` | ค่าคงที่ — ใช้แยก View ใน Interface |
+| # | Column Name | Data Type | คำอธิบาย (Description) | Lookup (ที่มา) | Condition / Logic | ตัวอย่าง B-Budget | ตัวอย่าง E-Encumbrance |
+|---|---|---|---|---|---|---|---|
+| 1 | WEB_BATCH_NO | VARCHAR2(255) | Batch Name ส่ง Interface | `RBN.BATCHNAME` ← `OAGWBG_RECEIVE_BATCH_NO` | `NVL(RBN.BATCHNAME, 'ENC/BG_CARRY_FORWARD_'+BUDGETYEAR+'_'+YYMMDDHH24MISS)` | `BG_CARRY_FORWARD_2568_YYMMDDHHMISS` | `ENC_CARRY_FORWARD_2568_YYMMDDHHMISS` |
+| 2 | USER_JE_SOURCE_NAME | CHAR(10) | Fixed ค่า JE Source | Fixed = `'Web Budget'` | ค่าคงที่ | `Web Budget` | `Web Budget` |
+| 3 | REFERENCE4 | VARCHAR2(478) | คำอธิบาย Header GL | `B.BUDGETYEAR`, `B.DEPARTMENTID`, `B.TRANSFERNO` ← OAGWBG_BUDGETRESERVED | `'เงินกันเหลื่อมปี '‖BUDGETYEAR‖'-'‖DEPARTMENTID‖' เลขที่เงินกัน '‖TRANSFERNO` | `เงินกันเหลื่อมปี 2568 68100005` | `เงินกันเหลื่อมปี 2568 68100005` |
+| 4 | REFERENCE5 | VARCHAR2(478) | คำอธิบาย Header GL (ซ้ำ) | เหมือน REFERENCE4 | ค่าเดียวกับ REFERENCE4 | `เงินกันเหลื่อมปี 2568 68100005` | `เงินกันเหลื่อมปี 2568 68100005` |
+| 5 | LEDGER_ID | VARCHAR2(4000) | รหัส Ledger Oracle GL | `SC.CONFIG_VALUE` ← `OAGWBG_SYSTEMCONFIG` | `WHERE SC.CONFIG_KEY = 'Ledger'` | `2021` | `2021` |
+| 6 | USER_JE_CATEGORY_NAME | VARCHAR2(16) | ชื่อ JE Category | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | ENC → `'Web Encumbrance'` / BG → `'Budget - เงินกัน'` | `Budget - เงินกัน` | `Web Encumbrance` |
+| 7 | TRANSFER_DATE | VARCHAR2(10) | วันที่โอน | `BRS.TRANSFERDATE` ← `OAGWBG_BUDGETRESERVED` | `TO_CHAR(B.TRANSFERDATE,'YYYY-MM-DD')` | *(วันที่โอน)* | *(วันที่โอน)* |
+| 8 | DEFAULT_EFFECTIVE_DATE | VARCHAR2(47) | วันที่มีผลบัญชี | `BRS.BUDGETYEAR` ← `OAGWBG_BUDGETRESERVED` | ENC → `(BUDGETYEAR-543)‖'-SEP-30'` / BG → `(BUDGETYEAR-543)‖'-OCT-01'` | `1-OCT-2026` | `30-SEP-2025` |
+| 9 | ACTUAL_FLAG | CHAR(1) | ประเภท GL Entry | `TYPE_MAP.ACTUAL_FLAG` | ENC → `'E'` / BG → `'B'` | `B` | `E` |
+| 10 | BUDGET_ENCUMBRANCE_NAME | VARCHAR2(12) | ชื่อ Budget Version | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | BG → `'OAG_BG_FINAL'` / ENC → `''` | `OAG_BG_FINAL` | *(ว่าง)* |
+| 11 | CURRENCY_CODE | CHAR(3) | รหัสสกุลเงิน | Fixed = `'THB'` | ค่าคงที่ | `THB` | `THB` |
+| 12 | ATTRIBUTE3 | CHAR(0) | สำรอง (ว่าง) | Fixed = `''` | ค่าคงที่ว่าง | *(ว่าง)* | *(ว่าง)* |
+| 13 | ATTRIBUTE4 | VARCHAR2(255) | เลขที่เงินกัน (Attribute) | `BRS.TRANSFERNO` ← `OAGWBG_BUDGETRESERVED` | ค่าเดียวกับ TRANSFERNO | `68110001` | `68110001` |
+| 14 | LINE_NUMBER | NUMBER | ลำดับบรรทัด GL | `ROW_NUMBER()` | `PARTITION BY B.BUDGETRESERVEDID, T.DOC_TYPE ORDER BY B.CATEGORYID, B.BUDGETPLANID` | `1` | `1` |
+| 15 | SEGMENT1 | VARCHAR2(150) | หน่วยเบิกจ่าย | `BRS.DEPARTMENTID` ← `OAGWBG_BUDGETRESERVED` | ค่าตรง ไม่แปลงเพิ่ม | `2900600000` | `2900600000` |
+| 16 | SEGMENT2 | VARCHAR2(150) | ศูนย์ต้นทุน | `BRS.COSTCENTERID` ← `OAGWBG_BUDGETRESERVED` | ค่าตรง ไม่แปลงเพิ่ม | `2900600001` | `2900600001` |
+| 17 | SEGMENT3 | NUMBER | ปีงบประมาณ (2 หลัก) | `BRSC.BUDGETYEAR` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `MOD(B.BUDGETYEAR, 100)` เช่น 2568 → 68 | `68` | `68` |
+| 18 | SEGMENT4 | VARCHAR2(255) | แหล่งเงิน | `BRS.BUDGETSOURCEID` ← `OAGWBG_BUDGETRESERVED` | BG → Fixed `'400'` / ENC → `B.BUDGETSOURCEID` | `100` | `100` |
+| 19 | SEGMENT5 | VARCHAR2(5) | แผนงาน | `BRSC.BUDGETPLANID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `LPAD(NVL(CASE WHEN BUDGETPLANID=90000 THEN 0 ELSE BUDGETPLANID END,'0'),5,'0')` | `20000` | `20000` |
+| 20 | SEGMENT6 | VARCHAR2(5) | ผลผลิต/แผนงานรอง/โครงการ | `BRSC.PRODUCTID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `LPAD(NVL(TO_CHAR(PRODUCTID),'0'),5,'0')` | `21000` | `21000` |
+| 21 | SEGMENT7 | VARCHAR2(4000) | กิจกรรม | `BRSC.ACTIVITYID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าตรง | `21100` | `21100` |
+| 22 | SEGMENT8 | VARCHAR2(25) | ประเภทรายจ่าย | `EAR.BUDGETTYPEID` ← `OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V` | JOIN `BRSC.CATEGORYID = EAR.CATEGORYID` | `231001` | `231001` |
+| 23 | SEGMENT9 | VARCHAR2(150) | รหัสงบประมาณ | `BRSC.BUDGETCODEID` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | `NVL(BUDGETCODEID,'00000000000000000000')` | `00000000000000000000` | `00000000000000000000` |
+| 24 | SEGMENT10 | VARCHAR2(25) | รหัสบัญชีหลัก | `EAR.ACCOUNTNO` ← `OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V` | JOIN `BRSC.CATEGORYID = EAR.CATEGORYID` | `1205030106` | `1205030106` |
+| 25 | SEGMENT11 | VARCHAR2(25) | รหัสบัญชีย่อย/รายจ่ายย่อย | `EAR.SUBACCOUNTNO` ← `OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V` | JOIN `BRSC.CATEGORYID = EAR.CATEGORYID` | `000651` | `000651` |
+| 26 | SEGMENT12 | CHAR(2) | สำรอง 1 | Fixed = `'00'` | ค่าคงที่ | `00` | `00` |
+| 27 | SEGMENT13 | CHAR(3) | สำรอง 2 | Fixed = `'000'` | ค่าคงที่ | `000` | `000` |
+| 28 | ENTERED_DR | NUMBER | ยอดเงินงบประมาณที่กัน (DR) | `BRSC.TOTALRESERVEDAMOUNT` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ใช้ทั้ง BG และ ENC | `48,900` | `48,900` |
+| 29 | ACCOUNTED_DR | NUMBER | ยอดเงินบัญชี (DR) | `BRSC.TOTALRESERVEDAMOUNT` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | เหมือน ENTERED_DR | `48,900` | `48,900` |
+| 30 | ENTERED_CR | VARCHAR2(0) | — | Fixed = `NULL` | ค่าคงที่ NULL | *(NULL)* | *(NULL)* |
+| 31 | ACCOUNTED_CR | VARCHAR2(0) | — | Fixed = `NULL` | ค่าคงที่ NULL | *(NULL)* | *(NULL)* |
+| 32 | REFERENCE1 | VARCHAR2(255) | เลข WEB_BATCH_NO (ซ้ำ) | ใช้ logic เดียวกับ WEB_BATCH_NO | `NVL(RBN.BATCHNAME, 'ENC/BG_CARRY_FORWARD_'+BUDGETYEAR+'_'+TIMESTAMP)` | *(เหมือน WEB_BATCH_NO)* | *(เหมือน WEB_BATCH_NO)* |
+| 33 | CREATED_BY | NUMBER | รหัสผู้สร้าง | `BRSC.CREATEBY` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category | *(User ID)* | *(User ID)* |
+| 34 | LAST_UPDATED_BY | NUMBER | รหัสผู้แก้ไขล่าสุด | `BRSC.UPDATEBY` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category | *(User ID)* | *(User ID)* |
+| 35 | CREATION_DATE | TIMESTAMP(6) | วันที่สร้าง | `BRSC.CREATEON` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category | *(Timestamp)* | *(Timestamp)* |
+| 36 | LAST_UPDATE_DATE | TIMESTAMP(6) | วันที่แก้ไขล่าสุด | `BRSC.UPDATEON` ← `OAGWBG_BUDGETRESERVED_CATEGORY` | ค่าจาก Category | *(Timestamp)* | *(Timestamp)* |
+| 37 | REFERENCE10 | VARCHAR2(240) | คำอธิบายรายการ (ชื่อหมวด) | `CC.NAME` ← `OAGWBG_V_EXT_OAGINV_CATEGORY_CODES_V` | JOIN `CC.ID = BRSC.CATEGORYID` | `ค่าปรับปรุงอาคารที่ทำการและสิ่งก่อสร้างประกอบ` | `ค่าปรับปรุงอาคารที่ทำการและสิ่งก่อสร้างประกอบ` |
+| 38 | ENCUMBRANCE_TYPE | VARCHAR2(15) | ประเภท Encumbrance | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | ENC → `'Web Encumbrance'` / BG → `''` | *(ว่าง)* | `Web Encumbrance` |
+| 39 | TRANSFERNO | VARCHAR2(255) | เลขที่เงินกัน | `BRS.TRANSFERNO` ← `OAGWBG_BUDGETRESERVED` | ค่าตรง | `68110001` | `68110001` |
+| 40 | RECEIPIENT_ACCOUNT | VARCHAR2(337) | รหัสบัญชีธนาคารผู้รับโอน | `BCC_RECEIVER.CASH_ACC` ← `OAGWBG_BUDGETRESERVED_BANKACCOUNT` → `OAGWBG_V_EXT_OAGCE_BANK_ACCOUNT_V` | ENC → `B.RECEIVER` / BG → `NULL` | *(NULL)* | `12012` |
+| 41 | SENDER_ACCOUNT | VARCHAR2(337) | รหัสบัญชีธนาคารผู้โอน | `BCC_GIVER.CASH_ACC` ← `OAGWBG_BUDGETRESERVED_BANKACCOUNT` → `OAGWBG_V_EXT_OAGCE_BANK_ACCOUNT_V` | ENC → `NULL` / BG → `B.GIVER` | `12011` | *(NULL)* |
+| 42 | TYPE | CHAR(1) | ทิศทางการโอน | ขึ้นกับ `TYPE_MAP.DOC_TYPE` | ENC → `'O'` (โอนออก) / BG → `'I'` (รับโอน) | `I` | `O` |
+| 43 | TRANSFERTYPE | CHAR(8) | ชื่อประเภทการโอน (แยก View) | Fixed = `'CARRYFWD'` | ค่าคงที่ — ใช้แยก View ใน Interface | `CARRYFWD` | `CARRYFWD` |
 
 ---
 
