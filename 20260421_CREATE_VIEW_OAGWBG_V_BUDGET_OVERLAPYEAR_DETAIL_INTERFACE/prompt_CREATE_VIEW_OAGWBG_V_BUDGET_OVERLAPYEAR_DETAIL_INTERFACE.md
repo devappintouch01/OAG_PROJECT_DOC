@@ -34,4 +34,7 @@ Task
 2.12 ตาราง OAGWBG.OAGWBG_BUDGETRESERVED ข้อมูลจากตารางนี้ต้องมี BUDGETRESERVEDREGION = P
 2.13 ตาราง OAGWBG.OAGWBG_BUDGETRESERVED_CATEGORY ไม่ใช้ตารางนี้ เนื่องจากเป็นข้อมูลที่ ref กับ ข้อมูลในตาราง OAGWBG.OAGWBG_BUDGETRESERVED ที่มี BUDGETRESERVEDREGION = C ต้องใช้ตาราง OAGWBG_BUDGETRESERVEDITEM แทน
 2.14 ขอสรุปการสร้าง view ใหม่เป็น create_view_xxx.md file และมี sql ในนั้น
+
+3. ลองเปรียบเทียบไฟล์ 
+OAGWBG_V_BUDGET_OVERLAPYEAR_CENTRAL_DETAIL_INTERFACE.sql ที่เป็นต้นแบบ กับ OAGWBG_V_BUDGET_OVERLAPYEAR_DETAIL_INTERFACE.sql ที่ให้คุณทำให้
 ```
