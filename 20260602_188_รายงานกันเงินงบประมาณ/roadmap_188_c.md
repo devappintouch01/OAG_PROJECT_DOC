@@ -156,3 +156,37 @@ ws.Cell(row, 16).Value = "";
 1. Export รายงาน Template 1 (เงินไว้เบิกเหลื่อมปี) → ตรวจว่าเรียงตามเลขที่เงินกัน และแถวที่ไม่มีหนี้คอลัมน์ 10–14 แสดงว่าง
 2. Export รายงาน Template 2 (ขอขยายเวลาเบิกจ่าย) → ตรวจว่าเรียงตามเลขที่เงินกัน และแถวที่ไม่มีหนี้คอลัมน์ 10–14 แสดงว่าง
 3. Export รายงาน Template 3 (แบบรายงานผลการเบิกจ่าย) → ตรวจว่าแถวที่ไม่มีหนี้คอลัมน์ 16–17 แสดงว่าง
+
+---
+
+## TFS Changeset
+
+| Changeset | วันที่ | รายละเอียด |
+|---|---|---|
+| 18954 | 2026-06-02 | fix #188: sort budget reserve report by transfer number and fix no-debt display |
+
+On the Budget Reserve Report (รายงานกันเงินงบประมาณ), report data was not 
+sorted by transfer number, and no-debt cases displayed a "No Debt Data" text 
+label instead of showing empty cells.
+
+Changed in 2 files:
+- OAGBudget.API/Services/Repository/ReportService.cs
+- OAGBudget/Views/Report/ReportBudgetOverlap.cshtml
+
+Changes:
+1. Add transfer number sorting (line 3289): added `.ThenBy(x => x.Transferno)` 
+   to sort order after RegionId and CostCenterId
+2. Empty cell display for no-debt cases (lines 3373, 3506, 3690, 3716): 
+   changed from `ws.Cell(row, col).Value = "ไม่มีข้อมูลหนี้"` to 
+   `ws.Cell(row, col).Value = ""` across all three report templates
+3. Font error handling (lines 3421, 3588, 3755): wrapped 
+   `ws.Columns().AdjustToContents()` in try-catch to prevent Excel generation 
+   crashes from font parsing errors
+4. Alert message text (line 245): changed from "รายงานเงินกันขอกัน" to 
+   "รายงานกันเงินงบประมาณ" for consistency with actual report title
+
+Changes apply to all three report templates: reserve fund carry-forward, 
+extended payment request, and disbursement results report. Merged cells and 
+styling remain unchanged.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
