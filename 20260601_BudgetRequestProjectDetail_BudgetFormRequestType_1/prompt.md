@@ -4,7 +4,6 @@ Context:
 - D:\TFS\OAG Budget\OAGBudget\*
 - D:\TFS\OAG Budget\OAGBudget.API\*
 
-
 ConnectionStrings:
 ```json
 {
