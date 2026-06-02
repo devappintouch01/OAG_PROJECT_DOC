@@ -66,7 +66,7 @@
 ## TFS Changeset
 
 | Changeset | วันที่ | รายละเอียด |
-|-----------|--------|------------|
+|---|---|---|
 | 18953 | 2026-06-02 | fix #116: hide ID prefix in dropdowns on Other Work Plan tab |
 
 On the Additional Budget Request page, Other Work Plan tab, both dropdowns

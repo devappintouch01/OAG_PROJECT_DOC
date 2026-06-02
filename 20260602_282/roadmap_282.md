@@ -57,3 +57,27 @@
 | แก้ error message | `BudgetTransferKTB.cs` | 18 | ทางเลือก |
 
 การแก้ไขนี้เป็น **UI label change เท่านั้น** ไม่กระทบ logic, database, หรือ API ใด ๆ
+
+---
+
+## TFS Changeset
+
+| Changeset | วันที่ | รายละเอียด |
+|---|---|---|
+| 18955 | 2026-06-02 | fix #282: update label for transfer number field to include reserve fund case |
+
+On the KTB Payment Text File report (รายงาน KTB Payment Text File), the
+field label "เลขที่โอน" did not reflect that it also covers reserve fund
+transfer numbers (เลขที่เงินกัน) when TransferType = 2.
+
+Changed in 2 files:
+- OAGBudget/Views/Report/ReportBudgetTransferKTBPaymentTextFile.cshtml
+- OAGBudget.DAL/Models/BudgetTransferKTB.cs
+
+Changes:
+1. Field label (line 87): changed from "เลขที่โอน" to "เลขที่โอน / เลขที่เงินกัน"
+   so the UI correctly describes both transfer types
+2. Validation error message (line 18): changed from "กรุณาเลือกเลขที่โอน" to
+   "กรุณาเลือกเลขที่โอน / เลขที่เงินกัน" to match the updated label
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
