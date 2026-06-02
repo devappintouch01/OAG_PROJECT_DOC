@@ -1,123 +1,148 @@
 # Roadmap #256 — เพิ่มช่อง "รายจ่ายย่อย" ในรายงานรายละเอียดการโอนเงินจัดสรรงบประมาณรายจ่ายประจำปี
 
+> **อัปเดต 2026-06-03**: เพิ่มข้อมูลจาก SA — แหล่งข้อมูลที่ถูกต้องคือ View `OAGINV_GL_SUBACCOUNT_EBUDGETING_V` field `SEGMENT_11` ไม่ใช่ `Expensetypename` ส่งผลให้ขั้นตอนที่ 2 และ 3 เปลี่ยนแปลงอย่างมีนัยสำคัญ
+
+---
+
+## แหล่งข้อมูลที่ถูกต้อง (จาก SA)
+
+| ข้อมูล | แหล่งที่มา |
+|---|---|
+| รายจ่ายย่อย | View `APPS.OAGINV_GL_SUBACCOUNT_EBUDGETING_V` → field `SEGMENT_11` |
+| Join key (TransferType=1) | `OagwbgRBudgetallocatetransfer.Code` = `OAGINV_GL_SUBACCOUNT_EBUDGETING_V.CATEGORY_CONCAT_SEGS` |
+| Join key (TransferType=2) | ไม่ต้อง join — `OagwbgRBudgetTransfer.Segment11` มีอยู่โดยตรง |
+
+---
+
 ## สาเหตุของปัญหา
 
-ข้อมูล "รายจ่ายย่อย" (`Expensetypename`) มีอยู่ในฐานข้อมูลแล้ว (ใน View `OagwbgRBudgetallocatetransfer`) แต่ยังไม่ได้นำมาแสดงในรายงาน เนื่องจาก:
+คอลัมน์ "รายจ่ายย่อย" ยังไม่มีในรายงาน เนื่องจาก:
 
-1. **`TransferDetailReportItem`** (internal class ใน `ReportService.cs` บรรทัด 5901–5927) ยังไม่มี property `ExpenseTypeName`
-2. **`GetTransferDetailTypeAllocateTransfer()`** (บรรทัด 5762–5824) ใช้ `Expensetypeid` เฉพาะเป็น filter แต่ไม่ได้ select `Expensetypename` มาเก็บในผลลัพธ์
-3. **Header array** ในฟังก์ชัน `ReportBudgetAllocateTransferDetail()` (บรรทัด 5659) มี 9 คอลัมน์ ไม่มีคอลัมน์ "รายจ่ายย่อย"
-4. **`OagwbgRBudgetTransfer`** (TransferType = 2 "ใบโอนกลับ") ไม่มี field `Expensetypeid`/`Expensetypename` ใน model — ต้องตรวจสอบว่า View ฐานข้อมูลรองรับหรือไม่
+1. **`TransferDetailReportItem`** (internal class ใน `ReportService.cs`) ยังไม่มี property `ExpenseTypeName`
+2. **`GetTransferDetailTypeAllocateTransfer()`** ไม่มีการ JOIN `OAGINV_GL_SUBACCOUNT_EBUDGETING_V` เพื่อดึง `Segment11`
+3. **`GetTransferDetailTypeReserveTransfer()`** ไม่ได้ map `Segment11` ที่มีอยู่แล้วใน `OagwbgRBudgetTransfer`
+4. **Header array** ในฟังก์ชัน `ReportBudgetAllocateTransferDetail()` มี 9 คอลัมน์ ไม่มีคอลัมน์ "รายจ่ายย่อย"
+
+---
+
+## สิ่งที่เปลี่ยนแปลงจากแผนเดิม (เทียบกับ roadmap v1)
+
+| จุด | แผนเดิม (v1) | แผนใหม่ (v2 — ตาม SA) | สถานะ |
+|---|---|---|---|
+| แหล่งข้อมูล TransferType=1 | `x.Expensetypename` | `Segment11` จาก JOIN `OAGINV_GL_SUBACCOUNT_EBUDGETING_V` | **ต้องแก้ไขใหม่** |
+| แหล่งข้อมูล TransferType=2 | `null` | `x.Segment11` (มีอยู่แล้วใน model) | **ต้องแก้ไขใหม่** |
+| โครงสร้าง Excel (Step 4) | เพิ่ม col "รายจ่ายย่อย" | เหมือนเดิม | **ทำแล้ว — ไม่ต้องเปลี่ยน** |
+| `TransferDetailReportItem.ExpenseTypeName` | เพิ่ม property | เหมือนเดิม | **ทำแล้ว — ไม่ต้องเปลี่ยน** |
+
+> **หมายเหตุ**: Step 4 (โครงสร้าง Excel, header, column widths, merges) ที่ทำไปแล้วใช้ได้ ไม่ต้องเปลี่ยน
+> Step 1 (`TransferDetailReportItem`) ที่ทำไปแล้วใช้ได้ ไม่ต้องเปลี่ยน
+> **ต้องแก้ไขเฉพาะ Step 2 และ Step 3** ใน `ReportService.cs`
 
 ---
 
 ## ขอบเขตการแก้ไข
 
-รายงานที่ได้รับผลกระทบ:
-- **TransferType = 1** (ใบโอนจัดสรร) — ไฟล์ `รายละเอียดการโอนเงินจัดสรรงบประมาณรายจ่ายประจำปี.xlsx`
-- **TransferType = 2** (ใบโอนกลับ) — อาจต้องตรวจสอบ View ฐานข้อมูลก่อน
-
-ไฟล์ที่ต้องแก้ไข:
+ไฟล์ที่ต้องแก้ไข (เฉพาะที่ยังไม่ได้ทำ หรือทำผิด):
 - `OAGBudget.API\Services\Repository\ReportService.cs`
 
 ---
 
-## แผนการแก้ไข
+## แผนการแก้ไข (v2)
 
-### ขั้นตอนที่ 1 — เพิ่ม property ใน `TransferDetailReportItem`
-ไฟล์: `ReportService.cs` บรรทัด ~5901
+### ✅ ขั้นตอนที่ 1 — เพิ่ม property ใน `TransferDetailReportItem` (ทำแล้ว)
 
-เพิ่ม property:
 ```csharp
 public string? ExpenseTypeName { get; set; }
 ```
 
 ---
 
-### ขั้นตอนที่ 2 — Map ข้อมูลใน `GetTransferDetailTypeAllocateTransfer()`
-ไฟล์: `ReportService.cs` บรรทัด ~5796–5822
+### ❌ ขั้นตอนที่ 2 — แก้ไข `GetTransferDetailTypeAllocateTransfer()` (TransferType = 1)
 
-เพิ่มการ map ใน `.Select(x => new TransferDetailReportItem { ... })`:
+**ต้องแก้ไข** — โค้ดปัจจุบันใช้ `x.Expensetypename` ซึ่งผิด
+
+**Pattern ที่ถูกต้อง** (เหมือนกับที่ใช้ใน `ReportBudgetAllocateTransferSummary` บรรทัด ~4969–4991):
+
 ```csharp
-ExpenseTypeName = x.Expensetypename,
+// 1. ดึงข้อมูลจาก OagwbgRBudgetallocatetransfer ก่อน (เหมือนเดิม)
+var rawItems = await query
+    .Where(x => x.Totaltransferamount > 0)
+    .OrderBy(x => x.Departmentid)
+    .ThenBy(x => x.Costcenterid)
+    .ThenBy(x => x.NoteSeq)
+    .ToListAsync();
+
+// 2. Query OAGINV_GL_SUBACCOUNT_EBUDGETING_V ด้วย Raw SQL
+var subAccountSql = @"SELECT STRUCTURE_NAME AS StructureName,
+                             CATEGORY_CONCAT_SEGS AS CategoryConcatSegs,
+                             SEGMENT_11 AS Segment11,
+                             EBUDGETING_CODE AS EbudgetingCode
+                      FROM APPS.OAGINV_GL_SUBACCOUNT_EBUDGETING_V";
+
+var subAccountList = await _context.Database
+    .SqlQueryRaw<SubAccountEbudgetingResult>(subAccountSql)
+    .ToListAsync();
+
+// 3. Build dictionary สำหรับ lookup โดยใช้ CategoryConcatSegs เป็น key
+var subAccountDict = subAccountList
+    .GroupBy(x => x.CategoryConcatSegs)
+    .ToDictionary(g => g.Key ?? "", g => g.First());
+
+// 4. Map ผลลัพธ์พร้อม Segment11
+return rawItems.Select(x => new TransferDetailReportItem
+{
+    // ... fields เดิม ...
+    ExpenseTypeName = subAccountDict.TryGetValue(x.Code ?? "", out var sa) ? sa.Segment11 : null
+}).ToList();
+```
+
+> Join key: `OagwbgRBudgetallocatetransfer.Code` = `OAGINV_GL_SUBACCOUNT_EBUDGETING_V.CATEGORY_CONCAT_SEGS`
+
+---
+
+### ❌ ขั้นตอนที่ 3 — แก้ไข `GetTransferDetailTypeReserveTransfer()` (TransferType = 2)
+
+**ต้องแก้ไข** — โค้ดปัจจุบัน `ExpenseTypeName = null` ซึ่งผิด
+
+`OagwbgRBudgetTransfer` มี field `Segment11` อยู่แล้ว map โดยตรงได้เลย:
+
+```csharp
+// เปลี่ยนจาก:
+ExpenseTypeName = null
+
+// เป็น:
+ExpenseTypeName = x.Segment11
 ```
 
 ---
 
-### ขั้นตอนที่ 3 — Map ข้อมูลใน `GetTransferDetailTypeReserveTransfer()` (TransferType = 2)
-ไฟล์: `ReportService.cs` บรรทัด ~5872–5898
+### ✅ ขั้นตอนที่ 4 — โครงสร้าง Excel (ทำแล้ว ไม่ต้องเปลี่ยน)
 
-- ตรวจสอบว่า View `OAGWBG_R_BUDGET_TRANSFER` ในฐานข้อมูลมี column `EXPENSETYPENAME` หรือไม่
-- ถ้ามี → เพิ่มใน `OagwbgRBudgetTransfer.cs` และ map ใน Select
-- ถ้าไม่มี → ใส่ค่าว่าง `ExpenseTypeName = null`
-
----
-
-### ขั้นตอนที่ 4 — เพิ่มคอลัมน์ "รายจ่ายย่อย" ในรายงาน Excel (TransferType = 1)
-ไฟล์: `ReportService.cs` ฟังก์ชัน `ReportBudgetAllocateTransferDetail()` บรรทัด ~5619–5744
-
-**4.1** แก้ไข header merge จาก 9 คอลัมน์ → 10 คอลัมน์ (บรรทัดที่ใช้ `Merge()` ทั้งหมดในส่วน header):
-```csharp
-// เปลี่ยน ...9).Merge() → ...10).Merge()
-```
-
-**4.2** แก้ไข headers array (บรรทัด 5659):
-```csharp
-string[] headers = { "ลำดับ", "สำนักงาน", "รายการ", "รายจ่ายย่อย", "ประเภทงบประมาณ", "รหัสงบประมาณ", "จำนวนเงิน", "ชื่อบัญชี", "เลขที่บัญชี", "หมายเหตุ" };
-```
-
-**4.3** แก้ไข tableData projection (บรรทัด ~5674–5686) เพิ่ม field:
-```csharp
-ExpenseType = x.ExpenseTypeName,
-```
-
-**4.4** แก้ไข data row writing เลื่อน column index และเพิ่ม column ใหม่ (บรรทัด ~5696–5719):
-```
-Col 1 = ลำดับ (ไม่เปลี่ยน)
-Col 2 = สำนักงาน (ไม่เปลี่ยน)
-Col 3 = รายการ (ไม่เปลี่ยน)
-Col 4 = รายจ่ายย่อย (ใหม่)
-Col 5 = ประเภทงบประมาณ (เดิม col 4)
-Col 6 = รหัสงบประมาณ (เดิม col 5)
-Col 7 = จำนวนเงิน (เดิม col 6)
-Col 8 = ชื่อบัญชี (เดิม col 7)
-Col 9 = เลขที่บัญชี (เดิม col 8)
-Col 10 = หมายเหตุ (เดิม col 9)
-```
-
-**4.5** แก้ไข "รวมทั้งสิ้น" row (บรรทัด ~5724–5732) เลื่อน column จาก 5,6 → 6,7
-
-**4.6** แก้ไข column widths (บรรทัด ~5734–5742) เพิ่ม column 4 และปรับ index ที่เหลือ:
-```csharp
-ws.Column(1).Width = 8;
-ws.Column(2).Width = 25;
-ws.Column(3).Width = 40;
-ws.Column(4).Width = 20;  // รายจ่ายย่อย (ใหม่)
-ws.Column(5).Width = 25;
-ws.Column(6).Width = 30;
-ws.Column(7).Width = 15;
-ws.Column(8).Width = 40;
-ws.Column(9).Width = 20;
-ws.Column(10).Width = 40;
-```
-
-**4.7** แก้ไข border style ใน data row จาก `..., 9)` → `..., 10)`
+| จุด | สถานะ |
+|---|---|
+| Header merges (9 → 10 คอลัมน์) | ✅ ทำแล้ว |
+| Headers array เพิ่ม "รายจ่ายย่อย" | ✅ ทำแล้ว |
+| tableData projection เพิ่ม `ExpenseType` | ✅ ทำแล้ว |
+| Data row writing เลื่อน col 4→5, เพิ่ม col 4 | ✅ ทำแล้ว |
+| "รวมทั้งสิ้น" row เลื่อน col 5,6 → 6,7 | ✅ ทำแล้ว |
+| Column widths เพิ่ม col 4 | ✅ ทำแล้ว |
+| Border style `...,9)` → `...,10)` | ✅ ทำแล้ว |
 
 ---
 
 ## ข้อควรระวัง
 
-- ตรวจสอบ **merge ranges** ทุกตำแหน่งในส่วน header ของรายงาน (มีหลายบรรทัดที่ merge ถึงคอลัมน์ 9) ต้องแก้เป็น 10 ทั้งหมด
-- รายงาน **TransferType = 2** (ใบโอนกลับ) ใช้ฟังก์ชัน `ReportBudgetAllocateTransferReciveDetail()` แยกต่างหาก ต้องแก้ไขแยกถ้าต้องการเพิ่มคอลัมน์นั้นด้วย
-- ควรทดสอบกับข้อมูลจริงใน EBS database เพื่อยืนยันว่า `Expensetypename` มีค่าและแสดงผลถูกต้อง
+- `OAGINV_GL_SUBACCOUNT_EBUDGETING_V` query ดึงข้อมูลทั้งหมดก่อน แล้วค่อย join in-memory (เหมือน pattern เดิม) เพื่อหลีกเลี่ยง cross-context join
+- `SubAccountEbudgetingResult` model มีอยู่แล้วที่ `OAGBudget.Models\RawData\SubAccountEbudgetingResult.cs` — ใช้ได้เลย ไม่ต้องสร้างใหม่
+- ควรทดสอบกับข้อมูลจริงเพื่อยืนยันว่า `Code` ตรงกับ `CATEGORY_CONCAT_SEGS` และ `Segment11` มีค่า
 
 ---
 
-## สรุป
+## สรุป (v2)
 
-| ขั้นตอน | ไฟล์ | รายละเอียด |
-|---|---|---|
-| 1 | `ReportService.cs` | เพิ่ม `ExpenseTypeName` ใน `TransferDetailReportItem` |
-| 2 | `ReportService.cs` | Map `Expensetypename` ใน `GetTransferDetailTypeAllocateTransfer()` |
-| 3 | `ReportService.cs`, `OagwbgRBudgetTransfer.cs` | ตรวจสอบ/เพิ่ม ExpenseType สำหรับ TransferType=2 |
-| 4 | `ReportService.cs` | เพิ่มคอลัมน์ "รายจ่ายย่อย" ในรายงาน Excel (headers, data, widths, merges) |
+| ขั้นตอน | ไฟล์ | สถานะ | รายละเอียด |
+|---|---|---|---|
+| 1 | `ReportService.cs` | ✅ ทำแล้ว | เพิ่ม `ExpenseTypeName` ใน `TransferDetailReportItem` |
+| 2 | `ReportService.cs` | ❌ ต้องแก้ใหม่ | Join `OAGINV_GL_SUBACCOUNT_EBUDGETING_V` และ map `Segment11` แทน `Expensetypename` |
+| 3 | `ReportService.cs` | ❌ ต้องแก้ใหม่ | Map `x.Segment11` แทน `null` สำหรับ TransferType=2 |
+| 4 | `ReportService.cs` | ✅ ทำแล้ว | โครงสร้าง Excel 10 คอลัมน์ พร้อม "รายจ่ายย่อย" |
