@@ -60,3 +60,27 @@
 - แก้ไขเฉพาะ **display text** ใน option ของ Dropdown
 - **ไม่มีการแก้ไข** Controller, Service, Model, หรือ Database
 - **ไม่กระทบ** แท็บอื่น ๆ (บุคลากร, พื้นฐาน, ยุทธศาสตร์, บูรณาการ)
+
+---
+
+## TFS Changeset
+
+| Changeset | วันที่ | รายละเอียด |
+|-----------|--------|------------|
+| 18953 | 2026-06-02 | fix #116: hide ID prefix in dropdowns on Other Work Plan tab |
+
+On the Additional Budget Request page, Other Work Plan tab, both dropdowns
+were displaying the ID prefix before the label (e.g. "16124 : Revenue Fund")
+instead of showing only the label text.
+
+Changed in 2 files:
+- Views/Budget/_partialView/_tableBudgetMoreOtherPlan.cshtml
+- Views/Budget/_partialView/_tableBudgetMoreCostcenterOtherPlan.cshtml
+
+Changes:
+1. Expense Type dropdown (line 23): changed label from "{Value} : {Text}" to "{Text}" only
+2. Budget Item dropdown (line 49): changed display from "@item.id : @item.text" to "@item.text" only
+
+Option value still holds the ID — no impact on save/submit behavior.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
