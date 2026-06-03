@@ -38,7 +38,7 @@ OagwbgBudgetgovernment (รายการคำขอ)          → OagwbgBudge
 .Activitycodeid (long)                        → .Activityid (string — ต้องตรวจ type)
 .Budgetcode                                   → .BudgetCodeId
 .Totalrequestamount                           → .Totalreceiveamount (default, แก้ไขได้)
-แหล่งเงินที่ user ระบุ (ฝั่งโอนออก)         → .BudgetSourceId
+แหล่งเงินที่ user ระบุ (ฝั่งโอนออก)                  → .BudgetSourceId
 ```
 
 ```
