@@ -122,11 +122,39 @@ foreach (var item in ListSumAccCode) {
 
 ---
 
-## TFS Changeset
+## 5. ผลการแก้ไข (Actual Result)
+
+| ขั้นตอน | เวลาก่อน | เวลาหลัง |
+|---------|----------|----------|
+| Waiting for server response | ~54s | ~11.9s |
+
+---
+
+## 6. สิ่งที่แก้ไขจริง
+
+### `OAGBudget.API/Services/Repository/BudgetService.cs`
+- **line 8085**: เปลี่ยน sequential `foreach` → `Task.WhenAll` + `SemaphoreSlim(20)`
+  เรียก `GetTotalBudget` แบบ parallel 20 concurrent แทนทีละครั้ง
+
+### `OAGBudget/Views/Budget/BudgetAllocateTransferDetail.cshtml`
+- **line 263**: ปุ่ม `#btnOpenPeriodModal` เริ่มต้น enabled พร้อม icon search แทน disabled + spinner
+- **line 771**: ลบ `loadPeriodModalData()` ออกจาก `$(document).ready()` → lazy load เมื่อกดปุ่มครั้งแรก
+- **line 658**: เพิ่ม spinner loading indicator เป็น `<div>` เหนือตาราง (ไม่ใช่ `<tr>` ใน `<tbody>`)
+  แก้ไข DataTables TN/18 error ที่เกิดเมื่อ `<tr colspan>` อยู่ใน `<tbody>` ก่อน init
+- **line 1868/1875/1882**: show/hide spinner ใน `openPeriodModal()` AJAX call
+
+---
+
+## 7. TFS Changeset
 
 | Changeset | วันที่ | รายละเอียด |
 |---|---|---|
 | 18956 | 2026-06-02 | perf(budget): speed up SearchBudgetTransferCategory from 54s to ~12s (#129) |
+| 18957 | 2026-06-03 | fix(budget): move spinner outside tbody to prevent DataTables TN/18 error (#129) |
+
+### Changeset 18956
+```
+perf(budget): speed up SearchBudgetTransferCategory from 54s to ~12s (#129)
 
 API endpoint /Budget/SearchBudgetTransferCategory ใช้เวลา ~54s เพราะ
 เรียก APPS.oaggl_process.find_budget ทีละ 1 ครั้ง แบบ sequential
@@ -144,3 +172,22 @@ Changed in 2 files:
 - OAGBudget/Views/Budget/BudgetAllocateTransferDetail.cshtml
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+```
+
+### Changeset 18957
+```
+fix(budget): move spinner outside tbody to prevent DataTables TN/18 error (#129)
+
+การวาง <tr id="periodTableLoadingRow"> ไว้ใน <tbody> ทำให้ DataTables
+นับ column count ผิดพลาด (TN/18) เมื่อเปิด modal ผ่านปุ่มใน list
+โดยที่ยังไม่มี periodModalDataCache
+
+- ย้าย spinner จาก <tr> ใน <tbody> เป็น <div> เหนือ table-responsive (line 658)
+- แก้ error: DataTables warning: table id=periodTable - Incorrect column count
+
+Changed in 1 file:
+- OAGBudget/Views/Budget/BudgetAllocateTransferDetail.cshtml
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+```
+

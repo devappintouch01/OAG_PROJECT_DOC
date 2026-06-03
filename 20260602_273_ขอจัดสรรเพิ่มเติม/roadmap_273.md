@@ -308,3 +308,185 @@ var lastRunning = await _context.OagwbgBudgetgovernmentitems
 | Full Table Scan บน 24,137 แถว (GOVITEM) | มี | ไม่มี (หลังสร้าง index) |
 | Full Table Scan บน DISBURSEMENT | มี | ไม่มี (หลังสร้าง index) |
 | รวม DB calls โดยประมาณ | 25–35 calls | 6–10 calls |
+
+---
+
+## แผนการ Verify ผลการแก้ไข
+
+### ขั้นตอนที่ 1 — ตรวจสอบ DB Objects บน preprod
+
+```sql
+-- ยืนยัน Index ถูกสร้างแล้ว
+SELECT INDEX_NAME, TABLE_NAME, STATUS
+FROM ALL_INDEXES
+WHERE TABLE_OWNER = 'OAGWBG'
+  AND INDEX_NAME IN ('IDX_DISBEST_BUDGETGOVID', 'IDX_GOVITEM_BUDGETGOVID');
+
+-- ยืนยัน Sequence ถูกสร้างแล้ว
+SELECT SEQUENCE_NAME, LAST_NUMBER
+FROM ALL_SEQUENCES
+WHERE SEQUENCE_OWNER = 'OAGWBG'
+  AND SEQUENCE_NAME = 'SEQ_OAGWBG_BUDGETDISBURSEMENTESTIMATED';
+```
+
+**ผลที่ต้องการ:** ได้ 2 rows จาก ALL_INDEXES และ 1 row จาก ALL_SEQUENCES
+
+---
+
+### ขั้นตอนที่ 2 — Functional Test: บันทึกรอบแรก (ปกติ)
+
+**สถานการณ์:** สร้าง BudgetRequest ใหม่ → เพิ่มรายการค่าใช้จ่าย → กรอกยอดเงิน + เดือน → กดบันทึก
+
+| จุดตรวจสอบ | วิธีตรวจ | ผลที่ต้องการ |
+|-----------|---------|------------|
+| บันทึกสำเร็จ | ดู popup "บันทึกสำเร็จ" | แสดง popup และ redirect |
+| ข้อมูลถูกบันทึก | Query `SELECT * FROM OAGWBG_BUDGETGOVERNMENT WHERE ID = ?` | มีข้อมูล |
+| ประมาณการเงินถูกบันทึก | Query `SELECT * FROM OAGWBG_BUDGETDISBURSEMENTESTIMATED WHERE BUDGETGOVERNMENTID = ?` | มีข้อมูลแต่ละเดือน |
+| ID ของ DISBURSEMENTESTIMATED | ตรวจค่า ID ที่ถูก insert | ต้องมาจาก Sequence (≥ 200 สำหรับ preprod) |
+
+---
+
+### ขั้นตอนที่ 3 — Functional Test: บันทึกรอบสอง (กรณีที่มีปัญหา)
+
+**สถานการณ์:** ส่งเรื่อง → ส่งเรื่องกลับ → แก้ไขยอดเงิน + เปลี่ยนเดือน → กดบันทึก
+
+| จุดตรวจสอบ | วิธีตรวจ | ผลที่ต้องการ |
+|-----------|---------|------------|
+| ความเร็วในการบันทึก | จับเวลาตั้งแต่กดบันทึกจนถึง popup สำเร็จ | **ไม่เกิน 5 วินาที** (เทียบกับก่อนแก้ที่หมุนนานมาก) |
+| ยอดเงินถูกอัปเดต | Query `SELECT PLANAMOUNT, MONTH FROM OAGWBG_BUDGETDISBURSEMENTESTIMATED WHERE BUDGETGOVERNMENTID = ?` | ตรงกับที่กรอกในหน้าจอ |
+| เดือนที่เปลี่ยนถูกบันทึก | ดูข้อมูลใน DB | เดือนใหม่มีข้อมูล เดือนเก่าหายไปหรืออัปเดต |
+| ไม่มี Duplicate Key Error | ดู SQL ด้านล่าง | ไม่มี error + 0 rows จาก duplicate check |
+| Sequence ถูกใช้งาน | Query `SELECT LAST_NUMBER FROM ALL_SEQUENCES WHERE SEQUENCE_NAME = 'SEQ_OAGWBG_BUDGETDISBURSEMENTESTIMATED'` | ค่าเพิ่มขึ้นจากก่อนบันทึก |
+
+#### วิธี Verify ไม่มี Duplicate Key แบบละเอียด
+
+**ก่อนบันทึก** — จดค่าเหล่านี้ไว้:
+
+```sql
+-- จด LAST_NUMBER ของ Sequence
+SELECT LAST_NUMBER AS SEQ_BEFORE
+FROM ALL_SEQUENCES
+WHERE SEQUENCE_OWNER = 'OAGWBG'
+  AND SEQUENCE_NAME = 'SEQ_OAGWBG_BUDGETDISBURSEMENTESTIMATED';
+
+-- จด MAX(ID) ที่มีอยู่แล้วสำหรับ record นี้
+SELECT MAX(ID) AS MAX_ID_BEFORE
+FROM OAGWBG_BUDGETDISBURSEMENTESTIMATED
+WHERE BUDGETGOVERNMENTID = <BudgetGovernmentId ที่ทดสอบ>;
+```
+
+**หลังบันทึก** — ตรวจ 3 จุด:
+
+```sql
+-- 1. Sequence เลื่อนขึ้นตามจำนวนเดือนที่ INSERT ใหม่
+--    (ถ้า INSERT 3 เดือนใหม่ → LAST_NUMBER ต้องเพิ่มขึ้น 3)
+SELECT LAST_NUMBER AS SEQ_AFTER
+FROM ALL_SEQUENCES
+WHERE SEQUENCE_OWNER = 'OAGWBG'
+  AND SEQUENCE_NAME = 'SEQ_OAGWBG_BUDGETDISBURSEMENTESTIMATED';
+
+-- 2. ID ของ record ที่ INSERT ใหม่ ต้องมาจาก Sequence (>= 200) และไม่ซ้ำกัน
+SELECT ID, MONTH, PLANAMOUNT
+FROM OAGWBG_BUDGETDISBURSEMENTESTIMATED
+WHERE BUDGETGOVERNMENTID = <BudgetGovernmentId ที่ทดสอบ>
+ORDER BY ID;
+
+-- 3. ตรวจ Duplicate ทั้งตาราง → ต้องได้ 0 rows
+SELECT ID, COUNT(*) AS CNT
+FROM OAGWBG_BUDGETDISBURSEMENTESTIMATED
+GROUP BY ID
+HAVING COUNT(*) > 1;
+```
+
+**ผลที่ต้องการ:**
+- Query 1: `SEQ_AFTER` = `SEQ_BEFORE` + จำนวนเดือนที่ INSERT ใหม่
+- Query 2: ID ใหม่ทุกตัว ≥ 200 และไม่ซ้ำกัน
+- Query 3: **0 rows**
+
+**Pre-condition ที่ต้องตรวจก่อน deploy** — Sequence ไม่ทับกับข้อมูลที่มีอยู่:
+
+```sql
+-- ต้องได้ 0 rows (MAX(ID) ปัจจุบัน < START WITH ของ Sequence)
+SELECT COUNT(*) AS CONFLICT_COUNT
+FROM OAGWBG_BUDGETDISBURSEMENTESTIMATED
+WHERE ID >= 200;
+-- preprod: MAX(ID) = 192 → ไม่ทับ START WITH 200 ✅
+```
+
+---
+
+### ขั้นตอนที่ 4 — ตรวจสอบ Server Logs (ถ้าเข้าถึงได้)
+
+ให้มองหา pattern เหล่านี้ใน log หลังการบันทึก:
+
+```
+// ก่อนแก้ จะเห็น ValidateTokenAndGetUserInfo ถูก log หลายครั้ง
+// หลังแก้ ควรเห็นแค่ครั้งเดียว
+
+// ตรวจสอบว่า Sequence ถูกเรียก
+SELECT SEQ_OAGWBG_BUDGETDISBURSEMENTESTIMATED.NEXTVAL FROM DUAL
+```
+
+---
+
+### ขั้นตอนที่ 5 — Regression Test: ฟีเจอร์อื่นที่ใช้ method เดียวกัน
+
+method `SaveBudgetGovernmentAssetItem` ถูกเรียกจาก `SaveBudgetRequestExpensesDetail` ด้วย ต้องทดสอบ:
+
+| ฟีเจอร์ | วิธีทดสอบ | ผลที่ต้องการ |
+|--------|---------|------------|
+| บันทึกรายการค่าใช้จ่ายปกติ (ไม่ใช่ MoreCostcenter) | เปิดหน้าบันทึกค่าใช้จ่ายแบบเดิม → กดบันทึก | บันทึกสำเร็จ ไม่มี error |
+| Asset Replace ยังทำงานได้ | เพิ่ม/ลบ asset → บันทึก | บันทึกสำเร็จ ข้อมูล asset ถูก |
+
+---
+
+### เกณฑ์ตัดสิน (Pass/Fail)
+
+| เกณฑ์ | Pass | Fail |
+|-------|------|------|
+| บันทึกรอบ 2 ไม่หมุนนาน | เสร็จภายใน 5 วินาที | ยังหมุนนานกว่า 10 วินาที |
+| ไม่มี Duplicate Key Error | ไม่มี exception | มี ORA-00001 |
+| ข้อมูลถูกต้อง | ยอดเงินและเดือนตรงกับที่กรอก | ข้อมูลผิดหรือหาย |
+| Regression ไม่พัง | ฟีเจอร์อื่น save ได้ปกติ | มี error ที่ไม่เคยมีก่อน |
+
+---
+
+## การแก้ไขที่ดำเนินการแล้ว (preprod)
+
+### DB Changes (172.16.11.19 / ebs_PRE)
+
+| รายการ | SQL | สถานะ |
+|--------|-----|-------|
+| Index บน `OAGWBG_BUDGETDISBURSEMENTESTIMATED(BUDGETGOVERNMENTID)` | `CREATE INDEX IDX_DISBEST_BUDGETGOVID ...` | ✅ แล้ว |
+| Index บน `OAGWBG_BUDGETGOVERNMENTITEM(BUDGETGOVERNMENTID)` | `CREATE INDEX IDX_GOVITEM_BUDGETGOVID ...` | ✅ แล้ว |
+| Oracle Sequence สำหรับ `OAGWBG_BUDGETDISBURSEMENTESTIMATED.ID` | `CREATE SEQUENCE SEQ_OAGWBG_BUDGETDISBURSEMENTESTIMATED START WITH 200` | ✅ แล้ว |
+
+### Code Changes
+
+#### `OAGBudget.API\Services\Repository\BudgetService.cs`
+
+| รายการ | รายละเอียด | สถานะ |
+|--------|-----------|-------|
+| `ValidateTokenAndGetUserInfo` เรียกครั้งเดียว | เพิ่ม `AccountModel userInfo = null` เป็น optional parameter ให้ทุก sub-method, ใช้ `userInfo ??= await _auth.ValidateTokenAndGetUserInfo()` | ✅ แล้ว |
+| `MaxAsync` → Oracle Sequence | ใน `SaveBudgetDisbursementEstimate` เปลี่ยนจาก `MaxAsync` เป็น `SEQ_OAGWBG_BUDGETDISBURSEMENTESTIMATED.NEXTVAL FROM DUAL` ต่อ record | ✅ แล้ว |
+| Running Number filter | `SaveBudgetMoreCostcenterGovernmentItem` เพิ่ม `.Where(x => x.Budgetgovernmentid == data.Id)` (2 จุด) | ✅ แล้ว |
+| `SaveBudgetDisbursementEstimate` — INSERT/UPDATE/skip logic | PlanAmount=0 + มี record → UPDATE=0 (แสดง 0.00), PlanAmount=0 + ไม่มี record → skip (ไม่ INSERT), PlanAmount>0 → INSERT/UPDATE ตามปกติ | ✅ แล้ว |
+
+#### `OAGBudget\wwwroot\js\number-utils.js`
+
+| รายการ | รายละเอียด | สถานะ |
+|--------|-----------|-------|
+| `parsePrice` crash เมื่อรับค่าที่ไม่ใช่ string | เปลี่ยนจาก `price.replace(...)` เป็น `String(price).replace(...)` พร้อม null/undefined/empty check | ✅ แล้ว |
+
+#### `OAGBudget\Views\Budget\BudgetRequestMoreCostcenterExpensesDetail.cshtml`
+
+| รายการ | รายละเอียด | สถานะ |
+|--------|-----------|-------|
+| `planAmount \|\| 1` crash เมื่อ field ว่าง | เปลี่ยนเป็น `\|\| '0'` (string ไม่ใช่ number) | ✅ แล้ว |
+| `id \|\| 1` ค่า default ผิด | เปลี่ยนเป็น `\|\| 0` | ✅ แล้ว |
+
+### รายการที่ยังไม่ได้แก้
+
+| รายการ | เหตุผล |
+|--------|--------|
+| รวม `SaveChangesAsync()` เป็น 1 ครั้ง | ซับซ้อน มี risk เรื่อง INSERT ใหม่ที่ต้องการ Id ก่อน รอ verify ผลจาก fix ปัจจุบันก่อน |

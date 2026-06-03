@@ -8,12 +8,12 @@
 Role 11 ยังไม่ได้รับสิทธิเข้าถึงหน้า `Report/ReportBudgetAllocateTransferDetail` ใน Database ผ่าน function `OAGWBG_FN_GETMENU_PERMISSION`  
 ต้องเพิ่มสิทธิให้ Role 11 เข้าถึงเมนูนี้ได้ผ่านหน้าจัดการสิทธิใน System Admin
 
-### สาเหตุที่ 2 — Service ไม่ filter ข้อมูลตาม หน่วยเบิกจ่าย และ ศูนย์ต้นทุน (Code)
-ใน `ReportService.cs` เมธอด `GetTransferDetailTypeAllocateTransfer()` (บรรทัด 5767) และ `GetTransferDetailTypeReserveTransfer()` (บรรทัด 5832) ไม่มีการกรองข้อมูลตาม `model.Departmentid` และ `model.Costcenterid` แม้ว่า parameter ทั้งสองจะถูกส่งมาจาก View แล้ว ทำให้ Role 11 จะเห็นข้อมูลของทุกหน่วยงาน ไม่ใช่เฉพาะของตัวเอง
+### สาเหตุที่ 2 — Service ไม่ filter ข้อมูลตาม หน่วยเบิกจ่าย (Code)
+ใน `ReportService.cs` เมธอด `GetTransferDetailTypeAllocateTransfer()` (บรรทัด 5767) และ `GetTransferDetailTypeReserveTransfer()` (บรรทัด 5832) ไม่มีการกรองข้อมูลตาม `model.Departmentid` แม้ว่า parameter จะถูกส่งมาจาก View แล้ว ทำให้ Role 11 จะเห็นข้อมูลของทุกหน่วยงาน ไม่ใช่เฉพาะหน่วยเบิกจ่ายของตัวเอง
 
-### สาเหตุที่ 3 — View ไม่ lock ศูนย์ต้นทุน สำหรับ Role 11 (Code)
+### สาเหตุที่ 3 — View ไม่ lock ศูนย์ต้นทุน และ Costcenterid ไม่ถูกส่งกลับเมื่อ lock (Code)
 ใน `ReportBudgetAllocateTransferDetail.cshtml` มีการ lock ภาค (`RegionID`) และ หน่วยเบิกจ่าย (`Departmentid`) สำหรับ Role 11 แล้ว (บรรทัด 369–374, 432–453)  
-แต่ยังไม่มีการ lock **ศูนย์ต้นทุน (`Costcenterid`)** หลังจาก cascade โหลดเสร็จ ทำให้ Role 11 อาจเปลี่ยน Costcenterid ดูข้อมูลของหน่วยงานอื่นได้
+แต่ **ศูนย์ต้นทุน (`Costcenterid`)** ไม่ถูก lock — Role 11 ควรเห็น dropdown ศูนย์ต้นทุนได้ทุกตัวในหน่วยเบิกจ่ายของตัวเอง และเลือกกรองได้อิสระ (ไม่ต้อง lock)
 
 ---
 
@@ -64,19 +64,12 @@ if (!string.IsNullOrEmpty(model.Costcenterid))
 
 ---
 
-### ขั้นตอนที่ 3 — Lock ศูนย์ต้นทุน สำหรับ Role 11 ใน View
+### ขั้นตอนที่ 3 — ไม่ต้องแก้ไข View (Costcenterid ไม่ต้อง lock)
 
-ไฟล์: `OAGBudget\Views\Report\ReportBudgetAllocateTransferDetail.cshtml`
+Role 11 ต้องการเห็น **ทุกศูนย์ต้นทุนในหน่วยเบิกจ่ายของตัวเอง** และเลือกกรองได้อิสระ  
+ดังนั้น **ไม่ต้อง lock `Costcenterid`** — ปล่อยให้ dropdown ทำงานตามปกติ (cascade จาก Departmentid ที่ถูก lock แล้ว)
 
-ใน callback ของ `$('#Departmentid').on('change', ...)` (บรรทัด ~399) หลังจาก costcenter โหลดและ set ค่าแล้ว ให้เพิ่ม:
-
-```javascript
-if (isRole11Only && presetCostcenterId) {
-    $costcenter.val(presetCostcenterId).prop('disabled', true).trigger('change.select2');
-}
-```
-
-> ตำแหน่งที่ควรเพิ่ม: ภายใน callback ของ `$.get(...)` สำหรับ CostCenter หลัง `$costcenter.val(presetCostcenterId);` ที่บรรทัด 417
+> ✅ ผลลัพธ์: Role 11 จะเห็น dropdown ศูนย์ต้นทุนเฉพาะในหน่วยเบิกจ่ายของตัวเองโดยอัตโนมัติ เพราะ Departmentid ถูก lock ไว้แล้ว
 
 ---
 
@@ -87,16 +80,14 @@ if (isRole11Only && presetCostcenterId) {
 | 1 | Database | System Admin / DB | เพิ่มสิทธิเมนูให้ Role 11 เข้าถึง `ReportBudgetAllocateTransferDetail` |
 | 2 | Code | `ReportService.cs` บรรทัด ~5793 | เพิ่ม filter `Departmentid` และ `Costcenterid` ใน `GetTransferDetailTypeAllocateTransfer()` |
 | 3 | Code | `ReportService.cs` บรรทัด ~5867 | เพิ่ม filter `Departmentid` และ `Costcenterid` ใน `GetTransferDetailTypeReserveTransfer()` |
-| 4 | Code | `ReportBudgetAllocateTransferDetail.cshtml` บรรทัด ~417 | Lock `Costcenterid` สำหรับ Role 11 หลัง cascade โหลดเสร็จ |
+| 4 | — | `ReportBudgetAllocateTransferDetail.cshtml` | ไม่ต้องแก้ — Costcenterid cascade ตาม Departmentid ที่ lock ไว้แล้ว |
 
 ---
 
 ## คำถามก่อนแก้ไข
 
 1. การเพิ่มสิทธิเมนูให้ Role 11 ทำผ่านหน้าไหน? (System Admin UI หรือ SQL ตรง?)
-2. ต้องการให้ Role 11 เห็นเฉพาะ **ศูนย์ต้นทุนของตัวเอง** เท่านั้น หรือเห็น **ทุกศูนย์ต้นทุนของหน่วยเบิกจ่ายตัวเอง** ได้?
-   - ถ้าให้เลือกได้เฉพาะของตัวเอง → lock ทั้ง Departmentid และ Costcenterid (ตามแผนปัจจุบัน)
-   - ถ้าให้เลือก Costcenterid อื่นในหน่วยเบิกจ่ายเดียวกันได้ → lock แค่ Departmentid
+   - ✅ **ข้อ 2 ตอบแล้ว:** Role 11 เห็นทุกศูนย์ต้นทุนในหน่วยเบิกจ่ายของตัวเอง (ไม่ lock Costcenterid)
 
 ---
 
