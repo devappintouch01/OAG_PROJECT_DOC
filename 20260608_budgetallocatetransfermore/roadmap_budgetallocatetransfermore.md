@@ -108,7 +108,7 @@
 
 ### 5.5 การบันทึกรายการโอนออก + ตัดยอด (Req 6.2)
 - บันทึกลง `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY`
-- ตัดยอดจาก `OAGWBG_BUDGETRECEIVE` ที่ตรงกัน (Match: Category + Plan + Product + Activity + BudgetSource)
+- ตัดยอดจาก `OAGWBG_BUDGETRECEIVE` ที่ตรงกัน (Match: Category + Plan + Product + Activity + BudgetSource + CostCenter + Department + BudgetYear)
 - ถ้าไม่พบ → สร้าง `OAGWBG_BUDGETRECEIVE` ใหม่ ยอด = 0
 - **กระบวนการนี้ reuse จาก `ConfirmBudgetAllocateTransfer` (BudgetService.cs line 15391)**
 
