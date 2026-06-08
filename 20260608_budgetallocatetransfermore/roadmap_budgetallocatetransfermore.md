@@ -92,6 +92,7 @@
 ```
 
 ### Status Codes (BudgetAllocateTransfer)
+
 | Code | ความหมาย |
 |---|---|
 | 80101 | ร่าง (Draft) |
@@ -99,6 +100,7 @@
 | 90109 | ยกเลิก (Cancelled) |
 
 ### Status Codes (BudgetRequestMoreCostcenter — ขอรับจัดสรรเพิ่มเติม)
+
 | Code | ความหมาย |
 |---|---|
 | 10101 | ร่าง (Draft) |
@@ -112,6 +114,7 @@
 ### 3.1 ไฟล์ใหม่ที่ต้องสร้าง (New Files)
 
 #### Frontend (Views)
+
 | ไฟล์ | Path | รายละเอียด |
 |---|---|---|
 | `BudgetAllocateTransferMoreList.cshtml` | `OAGBudget\Views\Budget\` | Copy โครงสร้างจาก `BudgetAllocateTransferList.cshtml` — Filter, Table เหมือนเดิม |
@@ -119,6 +122,7 @@
 | `_tableBudgetAllocateTransferMoreList.cshtml` | `OAGBudget\Views\Budget\_partialView\` | Partial view table สำหรับหน้า List |
 
 #### Models / DTOs
+
 | ไฟล์ | Path | รายละเอียด |
 |---|---|---|
 | `BudgetAllocateTransferMoreDetailModel.cs` | `OAGBudget.Models\Data\` | Model สำหรับ Save — Header + รายการรับโอน (จากคำขอ) + รายการโอนออกแต่ละรายการ |
@@ -127,6 +131,7 @@
 | `BudgetAllocateTransferMoreDetailViewModel.cs` | `OAGBudget.Models\ViewModel\` | ViewModel สำหรับส่งไปหน้า Detail (Header + Dropdown + รายการคำขอ) |
 
 #### DAL (Entity/Model)
+
 | ไฟล์ | Path | รายละเอียด |
 |---|---|---|
 | *(อาจไม่ต้องสร้างใหม่ ถ้าใช้ตารางเดิม)* | — | ใช้ `OagwbgBudgetallocatetransfer`, `OagwbgBudgetallocatetransferCategory`, `OagwbgBudgetreceive` เดิม |
@@ -134,21 +139,25 @@
 ### 3.2 ไฟล์ที่ต้องแก้ไข (Modified Files)
 
 #### MVC Controller
+
 | ไฟล์ | Path | Actions ที่ต้องเพิ่ม |
 |---|---|---|
 | `BudgetController.cs` | `OAGBudget\Controllers\` | `BudgetAllocateTransferMoreList()`, `SearchBudgetAllocateTransferMoreList()`, `BudgetAllocateTransferMoreDetail(int? id)`, `SaveBudgetAllocateTransferMoreDetail()`, `ConfirmBudgetAllocateTransferMore()`, `CancelBudgetAllocateTransferMore()`, `DeleteBudgetAllocateTransferMore()` |
 
 #### API Controller
+
 | ไฟล์ | Path | Endpoints ที่ต้องเพิ่ม |
 |---|---|---|
 | `BudgetController.cs` | `OAGBudget.API\Controllers\` | `GetBudgetAllocateTransferMoreList`, `GetBudgetAllocateTransferMoreDetail/{id}`, `SaveBudgetAllocateTransferMoreDetail`, `ConfirmBudgetAllocateTransferMore`, `CancelBudgetAllocateTransferMore`, `DeleteBudgetAllocateTransferMore`, **`GetBudgetRequestMoreForTransfer`** (ดึงคำขอยืนยัน), **`GetBudgetGovernmentByRequestId/{id}`** (ดึงรายการในคำขอ) |
 
 #### Service (Business Logic)
+
 | ไฟล์ | Path | Methods ที่ต้องเพิ่ม |
 |---|---|---|
 | `BudgetService.cs` | `OAGBudget.API\Services\Repository\` | `GetBudgetAllocateTransferMoreList()`, `GetBudgetAllocateTransferMoreDetail()`, `SaveBudgetAllocateTransferMoreDetail()`, `ConfirmBudgetAllocateTransferMore()`, **`GetBudgetRequestMoreForTransfer()`** (Query OAGWBG_BUDGETREQUEST ที่ StatusId = 20101), **`GetBudgetGovernmentByRequestId()`** (Query OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM) |
 
 #### Navigation / Menu
+
 | ไฟล์ | Path | รายละเอียด |
 |---|---|---|
 | *(ไฟล์ Menu/Navigation)* | `OAGBudget\Views\Shared\` หรือ `_Layout.cshtml` | เพิ่ม menu item "โอนจัดสรรเพิ่มเติม" |
