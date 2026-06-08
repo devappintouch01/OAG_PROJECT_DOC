@@ -328,7 +328,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | 10.1 | DB structure — เพิ่ม column หรือสร้างตารางใหม่? | ⏳ รอ | แนะนำ Option A: เพิ่ม `TRANSFERTYPE VARCHAR2(10)` ใน OAGWBG_BUDGETALLOCATETRANSFER |
 | 10.2 | สถานะยืนยันรายการใน OAGWBG_BUDGETGOVERNMENT — ใช้ `BudgetStatus = "A"`? | ⏳ รอ | ชั่วคราวใช้ filter ระดับ Header (StatusId=20101) แทนได้ |
 | 10.3 | ✅ ความสัมพันธ์ใบโอน : คำขอ | ✅ | **1:N** — 1 ใบโอนรองรับหลายคำขอ |
-| 10.4 | ✅ "fig เป็นงบประมาณ" หมายถึงอะไร? | ✅ | **"fig" = "fix ค่า"** → `Budgettypeid` fixed = "งบประมาณ" เมื่อ Source = 100 |
+| 10.4 | ✅ "fix เป็นงบประมาณ" หมายถึงอะไร? | ✅ | **"fix ค่า"** → `Budgettypeid` fixed = "งบประมาณ" เมื่อ Source = 100 |
 
 ---
 
