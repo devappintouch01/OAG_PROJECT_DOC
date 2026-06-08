@@ -96,7 +96,7 @@
 - **DepartmentId และ CostCenterId ถูก fix เป็นค่าคงที่** — user ไม่ต้องเลือก:
   - `DEPARTMENTID = 2900600000` (fixed)
   - `COSTCENTERID = 2906999999` (fixed)
-- **`Budgettypeid` = fixed เป็น "งบประมาณ"** — ค่าคงที่ ไม่ให้ user เลือก
+- **`Budgettypeid`** — ⚠️ ต้องชี้แจงกับ PO: ในหน้าโอนจัดสรรปกติ ค่านี้ดึงจาก `OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY` (line 8437) ไม่ใช่ string "งบประมาณ" ตรงๆ ต้องยืนยันว่า Source=100 ให้ใช้ค่าจาก function เดิม หรือมี BudgetTypeId เฉพาะสำหรับ "งบประมาณ"
 
 ### 5.3 กรณี BudgetSource อื่น เช่น "200", "400"
 - User ต้องเลือกทุก field เอง: หน่วยเบิกจ่าย, ศูนย์ต้นทุน, แหล่งเงิน, แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบประมาณ
@@ -110,7 +110,7 @@
 - บันทึกลง `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY`
 - ตัดยอดจาก `OAGWBG_BUDGETRECEIVE` ที่ตรงกัน (Match: Category + Plan + Product + Activity + BudgetSource + CostCenter + Department + BudgetYear)
 - ถ้าไม่พบ → สร้าง `OAGWBG_BUDGETRECEIVE` ใหม่ ยอด = 0
-- **กระบวนการนี้ reuse จาก `ConfirmBudgetAllocateTransfer` (BudgetService.cs line 15391)**
+- **กระบวนการนี้ reuse จาก `ConfirmBudgetAllocateTransfer` (BudgetService.cs line 15391)** โดยกระบวนการตัดยอดต้องใช้รายการโอนออกจากจาก ข้อ 5.2 และ 5.3
 
 ---
 
@@ -164,7 +164,7 @@
   │           WHERE Budgetformtypeid = 3  ← ขอรับจัดสรรเพิ่มเติม (mandatory — ref: MasterService.cs:3107)
   │             AND IS_COSTCENTER = 1     ← Cost Center type (mandatory — ใช้คู่กับ formtype=3 เสมอ)
   │             AND Statusid = 20101      ← เฉพาะสถานะยืนยัน
-  │             AND Rn IS NULL            ← version ล่าสุดเท่านั้น
+  │             AND Rn IS NULL            ← Rn = Id ของต้นฉบับที่ถูกแทนที่; NULL = active/ล่าสุด (View เก็บทุก version)
   │             AND Budgetyear = ปีที่เลือก (optional filter จาก user)
   │           หมายเหตุ: BudgetFormTypeId=3 หมายถึง "ขอรับจัดสรรเพิ่มเติม" (1=แผนงาน, 2=โครงการ, 3=เพิ่มเติม)
   │     แสดง: เลขที่คำขอ, หน่วยเบิกจ่าย, ศูนย์ต้นทุน, ยอดรวม
@@ -174,7 +174,7 @@
   │     → Service: GetBudgetGovernmentByRequestId()
   │     → DB: SELECT จาก OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM
   │           WHERE BudgetRequestId = คำขอที่เลือก
-  │           AND BudgetStatus = "A" (สถานะยืนยัน — ต้องยืนยัน field กับ PO)
+  │           AND BudgetStatus = "C"  ← ยืนยันแล้ว (confirmed by PO)
   │     แสดง: [คำขอ], แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบ, ยอดที่ขอ, ปุ่มโอนออก
   │
   └─ [แต่ละรายการ: ปุ่ม "ระบุโอนออก"] → Modal แหล่งเงินโอนออก
@@ -184,7 +184,7 @@
         │   Fixed ทั้งหมด (ไม่มี input ให้ user):
         │     DEPARTMENTID = 2900600000
         │     COSTCENTERID = 2906999999
-        │     Budgettypeid = "งบประมาณ"
+        │     Budgettypeid = ??? ← ⚠️ ต้องยืนยัน (ดูหมายเหตุข้อ 5.2)
         └─ Source อื่น (200, 400 ฯลฯ):
             Input ทุก field: DepartmentId, CostCenterId, BudgetSource,
                              Plan, Product, Activity, Category, BudgetCode
@@ -328,7 +328,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | 10.1 | DB structure — เพิ่ม column หรือสร้างตารางใหม่? | ⏳ รอ | แนะนำ Option A: เพิ่ม `TRANSFERTYPE VARCHAR2(10)` ใน OAGWBG_BUDGETALLOCATETRANSFER |
 | 10.2 | สถานะยืนยันรายการใน OAGWBG_BUDGETGOVERNMENT — ใช้ `BudgetStatus = "A"`? | ⏳ รอ | ชั่วคราวใช้ filter ระดับ Header (StatusId=20101) แทนได้ |
 | 10.3 | ✅ ความสัมพันธ์ใบโอน : คำขอ | ✅ | **1:N** — 1 ใบโอนรองรับหลายคำขอ |
-| 10.4 | ✅ "fix เป็นงบประมาณ" หมายถึงอะไร? | ✅ | **"fix ค่า"** → `Budgettypeid` fixed = "งบประมาณ" เมื่อ Source = 100 |
+| 10.4 | ⚠️ "fix เป็นงบประมาณ" — Budgettypeid ค่าจริงคืออะไร? | ⚠️ รอ | ในหน้าโอนจัดสรรปกติ `Budgettypeid` ดึงจาก `OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY` (line 8437) ไม่ใช่ string "งบประมาณ" ต้องยืนยันว่า Source=100 ให้ใช้ค่า code ใดจาก function หรือ master data |
 
 ---
 
