@@ -67,6 +67,7 @@
 ## 4. Status Codes
 
 ### BudgetAllocateTransfer / BudgetAllocateTransferMore (ใบโอน)
+
 | Code | ความหมาย |
 |---|---|
 | 80101 | ร่าง (Draft) |
@@ -74,6 +75,7 @@
 | 90109 | ยกเลิก (Cancelled) |
 
 ### BudgetRequestMoreCostcenter (ขอรับจัดสรรเพิ่มเติม)
+
 | Code | ความหมาย | หมายเหตุ |
 |---|---|---|
 | 10101 | ร่าง (Draft) | — |
@@ -91,8 +93,10 @@
 
 ### 5.2 กรณี BudgetSource = "100" (เงินรายจ่ายประจำปี)
 - ระบบ **auto-fill** รายการโอนออกจากรายการรับโอนเดียวกัน (Category, Plan, Product, Activity, BudgetCode เหมือนกัน)
-- User เปลี่ยนได้เพียง: **หน่วยเบิกจ่าย (DepartmentId)** และ **ศูนย์ต้นทุน (CostCenterId)**
-- **`Budgettypeid` = fixed เป็น "งบประมาณ"** — ค่าคงที่ ไม่ให้ user เลือก ("fig" = "fix ค่า")
+- **DepartmentId และ CostCenterId ถูก fix เป็นค่าคงที่** — user ไม่ต้องเลือก:
+  - `DEPARTMENTID = 2900600000` (fixed)
+  - `COSTCENTERID = 2906999999` (fixed)
+- **`Budgettypeid` = fixed เป็น "งบประมาณ"** — ค่าคงที่ ไม่ให้ user เลือก
 
 ### 5.3 กรณี BudgetSource อื่น เช่น "200", "400"
 - User ต้องเลือกทุก field เอง: หน่วยเบิกจ่าย, ศูนย์ต้นทุน, แหล่งเงิน, แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบประมาณ
@@ -177,8 +181,10 @@
         Dropdown: BudgetSource
         ├─ Source = "100" (เงินรายจ่ายประจำปี):
         │   Auto-fill: Category, Plan, Product, Activity, BudgetCode จากรายการรับโอน
-        │   Input: DepartmentId, CostCenterId
-        │   Fixed: Budgettypeid = "งบประมาณ" (ไม่ให้ user เลือก)
+        │   Fixed ทั้งหมด (ไม่มี input ให้ user):
+        │     DEPARTMENTID = 2900600000
+        │     COSTCENTERID = 2906999999
+        │     Budgettypeid = "งบประมาณ"
         └─ Source อื่น (200, 400 ฯลฯ):
             Input ทุก field: DepartmentId, CostCenterId, BudgetSource,
                              Plan, Product, Activity, Category, BudgetCode
@@ -195,7 +201,11 @@
       ├─ สร้าง OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY (รายการโอนออก)
       │   Ref = OagwbgBudgetgovernment.Id  ← เชื่อมกลับไปคำขอได้ผ่าน field นี้
       │   BudgetSourceId = แหล่งเงินโอนออก
-      │   Budgettypeid = "งบประมาณ" (Source=100) หรือค่าที่ user เลือก
+      │   ถ้า Source = 100:
+      │     Departmentid = "2900600000" (fixed)
+      │     Costcenterid = "2906999999" (fixed)
+      │     Budgettypeid = "งบประมาณ"   (fixed)
+      │   ถ้า Source อื่น: ใช้ค่าที่ user เลือก
       │   ⚠️ Type cast: Productid (long→string), Activitycodeid (long→string)
       └─ สร้าง OAGWBG_BUDGETRECEIVE (รายการรับโอน)
           Departmentid = BudgetRequest.Departmentid (ผู้รับ)
@@ -226,6 +236,7 @@
 ### 8.1 ไฟล์ใหม่
 
 #### Views (`OAGBudget\Views\Budget\`)
+
 | ไฟล์ | รายละเอียด |
 |---|---|
 | `BudgetAllocateTransferMoreList.cshtml` | Copy จาก BudgetAllocateTransferList — Filter + Table เหมือนเดิม |
@@ -233,6 +244,7 @@
 | `_partialView/_tableBudgetAllocateTransferMoreList.cshtml` | Partial table สำหรับหน้า List |
 
 #### Models (`OAGBudget.Models\`)
+
 | ไฟล์ | Path | รายละเอียด |
 |---|---|---|
 | `BudgetAllocateTransferMoreDetailModel.cs` | `Data\` | Save model: Header + รายการ (รับโอน + โอนออก) |
@@ -242,6 +254,7 @@
 ### 8.2 ไฟล์ที่ต้องแก้ไข
 
 #### MVC Controller (`OAGBudget\Controllers\BudgetController.cs`)
+
 | Action | HTTP | รายละเอียด |
 |---|---|---|
 | `BudgetAllocateTransferMoreList()` | GET | Load dropdowns → Return View |
@@ -253,6 +266,7 @@
 | `DeleteBudgetAllocateTransferMore(int id)` | POST | Call API Delete |
 
 #### API Controller (`OAGBudget.API\Controllers\BudgetController.cs`)
+
 | Endpoint | HTTP | Service Method |
 |---|---|---|
 | `GetBudgetAllocateTransferMoreList` | GET | `GetBudgetAllocateTransferMoreList()` |
@@ -265,6 +279,7 @@
 | **`GetBudgetGovernmentByRequestId/{id}`** | GET | `GetBudgetGovernmentByRequestId()` |
 
 #### Service (`OAGBudget.API\Services\Repository\BudgetService.cs`)
+
 | Method | รายละเอียด |
 |---|---|
 | `GetBudgetAllocateTransferMoreList()` | Query OAGWBG_V_BUDGETALLOCATETRANSFER WHERE TRANSFERTYPE='MORE' |
