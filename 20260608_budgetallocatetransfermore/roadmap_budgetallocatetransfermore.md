@@ -1,334 +1,359 @@
-## ผลการวิเคราะห์ (Analysis Results)
-**วันที่วิเคราะห์:** 2026-06-08  
-**สถานะ:** วิเคราะห์เสร็จสิ้น — รอการพัฒนา
+# Roadmap: โอนจัดสรรเพิ่มเติม (BudgetAllocateTransferMore)
+**Version:** 1.0  
+**วันที่:** 2026-06-08  
+**สถานะ:** วิเคราะห์เสร็จสิ้น — พร้อมพัฒนา (รอยืนยัน DB structure)
 
 ---
 
-## 1. ความเข้าใจ Feature และ Dependency
+## 1. ภาพรวม Feature
 
-### Feature ที่เกี่ยวข้อง
-- **โอนจัดสรร (BudgetAllocateTransfer)** — feature หลักที่จะ "ยืมโครงสร้าง" มาใช้ (List + Header)
-- **ขอรับจัดสรรเพิ่มเติม (BudgetRequestMoreCostcenter)** — feature ที่เก็บ "คำขอ" ที่ BudgetAllocateTransferMore จะดึงรายการมา
+สร้างหน้าจอใหม่ **"โอนจัดสรรเพิ่มเติม" (BudgetAllocateTransferMore)** ที่:
+- ใช้โครงสร้าง List + Header เดิมจากหน้า **โอนจัดสรร (BudgetAllocateTransfer)**
+- ดึงรายการจาก **ขอรับจัดสรรเพิ่มเติม (BudgetRequestMoreCostcenter)** ที่สถานะยืนยัน (20101)
+- 1 ใบโอนจัดสรรเพิ่มเติม รองรับ **หลายคำขอ (1:N)**
+- แต่ละรายการจากคำขอ ผู้ใช้ระบุว่าจะโอนออกจากแหล่งเงินใด
+- บันทึกลงตาราง OAGWBG_BUDGETRECEIVE (รับโอน) และ OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY (โอนออก)
+- กระบวนการยืนยัน reuse logic เดิมจาก ConfirmBudgetAllocateTransfer
 
-### ตาราง Oracle ที่ใช้งาน
+---
 
-| ตาราง | วัตถุประสงค์ | Model C# |
+## 2. Feature Dependencies
+
+| Feature | ชื่อระบบ | วัตถุประสงค์ใน Feature นี้ |
 |---|---|---|
-| `OAGWBG_BUDGETALLOCATETRANSFER` | Header ใบโอนจัดสรร | `OagwbgBudgetallocatetransfer` |
-| `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY` | รายการโอนออก (ต้นทาง) | `OagwbgBudgetallocatetransferCategory` |
+| โอนจัดสรร | BudgetAllocateTransfer | ยืม List + Header structure |
+| ขอรับจัดสรรเพิ่มเติม | BudgetRequestMoreCostcenter | แหล่งข้อมูลคำขอที่จะโอน (หลายคำขอต่อ 1 ใบโอน) |
+
+---
+
+## 3. ตาราง Oracle ที่เกี่ยวข้อง
+
+### 3.1 ตารางหลัก (Read + Write)
+
+| ตาราง | วัตถุประสงค์ | C# Model |
+|---|---|---|
+| `OAGWBG_BUDGETALLOCATETRANSFER` | Header ใบโอนจัดสรรเพิ่มเติม | `OagwbgBudgetallocatetransfer` |
+| `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY` | รายการโอนออก (ต้นทาง) — `Ref` ชี้ไป `BudgetGovernment.Id` | `OagwbgBudgetallocatetransferCategory` |
 | `OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER` | ศูนย์ต้นทุนในใบโอน | `OagwbgBudgetallocatetransferCostcenter` |
-| `OAGWBG_BUDGETRECEIVE` | รายการรับโอน (ปลายทาง + ต้นทางที่ถูกตัด) | `OagwbgBudgetreceive` |
+| `OAGWBG_BUDGETRECEIVE` | รายการรับโอน (ปลายทาง) + ตัดยอดต้นทาง | `OagwbgBudgetreceive` |
+
+### 3.2 ตารางอ้างอิง (Read-only)
+
+| ตาราง | วัตถุประสงค์ | C# Model |
+|---|---|---|
 | `OAGWBG_BUDGETREQUEST` | Header คำขอรับจัดสรรเพิ่มเติม | `OagwbgBudgetrequest` |
 | `OAGWBG_BUDGETGOVERNMENT` | รายการในคำขอ | `OagwbgBudgetgovernment` |
 | `OAGWBG_BUDGETGOVERNMENTITEM` | รายละเอียดรายการในคำขอ | `OagwbgBudgetgovernmentitem` |
 
-### Oracle View ที่ใช้ (Read-only)
+### 3.3 Oracle View (Read-only)
 
 | View | วัตถุประสงค์ |
 |---|---|
-| `OAGWBG_V_BUDGETALLOCATETRANSFER` | แสดงรายการโอนพร้อม join ข้อมูล |
-| `OAGWBG_V_BUDGETALLOCATETRANSFER_CATEGORY` | แสดงรายการ Category พร้อม join |
+| `OAGWBG_V_BUDGETALLOCATETRANSFER` | แสดงรายการ Header พร้อม join |
+| `OAGWBG_V_BUDGETALLOCATETRANSFER_CATEGORY` | แสดง Category พร้อม join |
 | `OAGWBG_V_BUDGETALLOCATETRANSFER_COSTCENTER` | แสดง Cost Center พร้อม join |
 | `OAGWBG_V_BUDGETRECEIVE` | แสดงรายการรับโอนพร้อม join |
 
-### Oracle Function ที่เกี่ยวข้อง
+### 3.4 Oracle Function
 
 | Function | วัตถุประสงค์ |
 |---|---|
-| `OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY` | ดึงรายการ Category พร้อม balance สำหรับหน้าโอนจัดสรร |
+| `OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY` | ดึงรายการ Category พร้อม balance (ใช้ในหน้าโอนจัดสรรปกติ) |
 
-> ⚠️ **หมายเหตุ:** ยังไม่พบ Stored Procedure เฉพาะ — logic ส่วนใหญ่อยู่ใน BudgetService.cs
+> ⚠️ ไม่พบ Stored Procedure เฉพาะ — business logic อยู่ใน BudgetService.cs
 
 ---
 
-## 2. Flow ปัจจุบัน (BudgetAllocateTransfer — ระบบต้นแบบ)
+## 4. Status Codes
 
-```
-[UI: BudgetAllocateTransferList.cshtml]
-    │  ค้นหาด้วย Filter (RoundNo, Date, Region, BudgetYear, OrgType, Status)
-    ▼
-[MVC: BudgetController.SearchBudgetAllocateTransferList (line ~3530)]
-    │  POST → API
-    ▼
-[API: BudgetController.GetBudgetAllocateTransferList (line 1181)]
-    │  เรียก _service.GetBudgetAllocateTransferList()
-    ▼
-[Service: BudgetService.GetBudgetAllocateTransferList (line 7951)]
-    │  Query OAGWBG_V_BUDGETALLOCATETRANSFER
-    ▼
-[DB: Oracle SELECT จาก OAGWBG_V_BUDGETALLOCATETRANSFER]
-
-─────────────────────────────────────────────────────
-
-[UI: BudgetAllocateTransferDetail.cshtml]  (new / edit)
-    │  กรอกข้อมูล header + เลือกรายการงบประมาณจาก Modal (SearchBudgetTransferCategory)
-    ▼
-[MVC: BudgetController.SaveBudgetAllocateTransferDetail (line ~3580)]
-    │  POST body: BudgetAllocateTransferDetailModel
-    ▼
-[API: BudgetController.SaveBudgetAllocateTransferDetail (line 1223)]
-    │  เรียก _service.SaveBudgetAllocateTransferDetail()
-    ▼
-[Service: BudgetService.SaveBudgetAllocateTransferDetail (line 8306)]
-    │  ├─ สร้าง/อัปเดต OAGWBG_BUDGETALLOCATETRANSFER (header)
-    │  ├─ SaveBudgetAllocateTransferCategory → OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY
-    │  └─ SaveBudgetAllocateTransferCostCenter → OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER
-
-─────────────────────────────────────────────────────
-
-[UI: กดปุ่ม "ยืนยัน" (Confirm)]
-    ▼
-[MVC: BudgetController.ConfirmBudgetAllocateTransfer (line ~3620)]
-    ▼
-[API: BudgetController.ConfirmBudgetAllocateTransfer (line 1307)]
-    ▼
-[Service: BudgetService.ConfirmBudgetAllocateTransfer (line 15391)]
-    │  ├─ อัปเดตสถานะเป็น "80201"
-    │  ├─ หา OAGWBG_BUDGETRECEIVE ที่ตรงกับแต่ละ Category
-    │  │   (Match โดย: Categoryid + Productid + Activityid + BudgetSourceId)
-    │  ├─ ถ้าไม่เจอ → สร้าง OAGWBG_BUDGETRECEIVE ใหม่ ยอด = 0
-    │  └─ อัปเดต Totaltransferamount ใน OAGWBG_BUDGETRECEIVE (ตัดยอดต้นทาง)
-         และสร้าง OAGWBG_BUDGETRECEIVE ปลายทาง
-```
-
-### Status Codes (BudgetAllocateTransfer)
-
+### BudgetAllocateTransfer / BudgetAllocateTransferMore (ใบโอน)
 | Code | ความหมาย |
 |---|---|
 | 80101 | ร่าง (Draft) |
 | 80201 | ยืนยัน (Confirmed) |
 | 90109 | ยกเลิก (Cancelled) |
 
-### Status Codes (BudgetRequestMoreCostcenter — ขอรับจัดสรรเพิ่มเติม)
-
-| Code | ความหมาย |
-|---|---|
-| 10101 | ร่าง (Draft) |
-| 10102 | ส่งเรื่องแล้ว (Submitted) |
-| 20101 | **ยืนยัน (Confirmed)** ← สถานะที่ต้องดึงมาแสดงในหน้าใหม่ |
+### BudgetRequestMoreCostcenter (ขอรับจัดสรรเพิ่มเติม)
+| Code | ความหมาย | หมายเหตุ |
+|---|---|---|
+| 10101 | ร่าง (Draft) | — |
+| 10102 | ส่งเรื่องแล้ว (Submitted) | — |
+| **20101** | **ยืนยัน (Confirmed)** | **← Filter เฉพาะสถานะนี้ใน modal เลือกคำขอ** |
 
 ---
 
-## 3. ไฟล์ทั้งหมดที่ต้องสร้างใหม่ / แก้ไข
+## 5. กฎ Business ที่สำคัญ
 
-### 3.1 ไฟล์ใหม่ที่ต้องสร้าง (New Files)
+### 5.1 ความสัมพันธ์ใบโอน : คำขอ = 1 : N
+- 1 ใบโอนจัดสรรเพิ่มเติม สามารถดึงจาก **หลายคำขอ** ได้
+- แต่ละรายการใน Category ผูกกับ BudgetGovernment (และรู้ว่ามาจากคำขอใด ผ่าน `Ref` → `BudgetGovernment.Id` → `BudgetGovernment.BudgetRequestId`)
+- ใน DB ไม่จำเป็นต้องเก็บ RequestId ที่ Header — ดูจาก Category ได้เลย
 
-#### Frontend (Views)
+### 5.2 กรณี BudgetSource = "100" (เงินรายจ่ายประจำปี)
+- ระบบ **auto-fill** รายการโอนออกจากรายการรับโอนเดียวกัน (Category, Plan, Product, Activity, BudgetCode เหมือนกัน)
+- User เปลี่ยนได้เพียง: **หน่วยเบิกจ่าย (DepartmentId)** และ **ศูนย์ต้นทุน (CostCenterId)**
+- **`Budgettypeid` = fixed เป็น "งบประมาณ"** — ค่าคงที่ ไม่ให้ user เลือก ("fig" = "fix ค่า")
 
-| ไฟล์ | Path | รายละเอียด |
-|---|---|---|
-| `BudgetAllocateTransferMoreList.cshtml` | `OAGBudget\Views\Budget\` | Copy โครงสร้างจาก `BudgetAllocateTransferList.cshtml` — Filter, Table เหมือนเดิม |
-| `BudgetAllocateTransferMoreDetail.cshtml` | `OAGBudget\Views\Budget\` | **ไฟล์หลัก** — Header จาก `BudgetAllocateTransferDetail.cshtml` + ส่วนแสดงรายการจากคำขอ + Modal เลือกคำขอ + Modal เลือกแหล่งเงินโอนออก |
-| `_tableBudgetAllocateTransferMoreList.cshtml` | `OAGBudget\Views\Budget\_partialView\` | Partial view table สำหรับหน้า List |
+### 5.3 กรณี BudgetSource อื่น เช่น "200", "400"
+- User ต้องเลือกทุก field เอง: หน่วยเบิกจ่าย, ศูนย์ต้นทุน, แหล่งเงิน, แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบประมาณ
 
-#### Models / DTOs
+### 5.4 การบันทึกรายการรับโอน (Req 6.1)
+- บันทึกลง `OAGWBG_BUDGETRECEIVE`
+- **`Budgetsourceid`** = แหล่งเงินฝั่งโอนออก (ไม่ใช่แหล่งเงินในคำขอ)
+- `Departmentid` = BudgetRequest.Departmentid, `Costcenterid` = BudgetRequest.Costcenterid
 
-| ไฟล์ | Path | รายละเอียด |
-|---|---|---|
-| `BudgetAllocateTransferMoreDetailModel.cs` | `OAGBudget.Models\Data\` | Model สำหรับ Save — Header + รายการรับโอน (จากคำขอ) + รายการโอนออกแต่ละรายการ |
-| `BudgetAllocateTransferMoreItemModel.cs` | `OAGBudget.Models\Data\` | Model แต่ละรายการจากคำขอ + ข้อมูลฝั่งโอนออก (BudgetSourceId, DeptId, CostCenterId, etc.) |
-| `SearchBudgetAllocateTransferMore.cs` | `OAGBudget.Models\Search\` | อาจ reuse `SearchBudgetAllocateTransferList` ได้เลย หรือสร้างใหม่ถ้ามี filter พิเศษ |
-| `BudgetAllocateTransferMoreDetailViewModel.cs` | `OAGBudget.Models\ViewModel\` | ViewModel สำหรับส่งไปหน้า Detail (Header + Dropdown + รายการคำขอ) |
-
-#### DAL (Entity/Model)
-
-| ไฟล์ | Path | รายละเอียด |
-|---|---|---|
-| *(อาจไม่ต้องสร้างใหม่ ถ้าใช้ตารางเดิม)* | — | ใช้ `OagwbgBudgetallocatetransfer`, `OagwbgBudgetallocatetransferCategory`, `OagwbgBudgetreceive` เดิม |
-
-### 3.2 ไฟล์ที่ต้องแก้ไข (Modified Files)
-
-#### MVC Controller
-
-| ไฟล์ | Path | Actions ที่ต้องเพิ่ม |
-|---|---|---|
-| `BudgetController.cs` | `OAGBudget\Controllers\` | `BudgetAllocateTransferMoreList()`, `SearchBudgetAllocateTransferMoreList()`, `BudgetAllocateTransferMoreDetail(int? id)`, `SaveBudgetAllocateTransferMoreDetail()`, `ConfirmBudgetAllocateTransferMore()`, `CancelBudgetAllocateTransferMore()`, `DeleteBudgetAllocateTransferMore()` |
-
-#### API Controller
-
-| ไฟล์ | Path | Endpoints ที่ต้องเพิ่ม |
-|---|---|---|
-| `BudgetController.cs` | `OAGBudget.API\Controllers\` | `GetBudgetAllocateTransferMoreList`, `GetBudgetAllocateTransferMoreDetail/{id}`, `SaveBudgetAllocateTransferMoreDetail`, `ConfirmBudgetAllocateTransferMore`, `CancelBudgetAllocateTransferMore`, `DeleteBudgetAllocateTransferMore`, **`GetBudgetRequestMoreForTransfer`** (ดึงคำขอยืนยัน), **`GetBudgetGovernmentByRequestId/{id}`** (ดึงรายการในคำขอ) |
-
-#### Service (Business Logic)
-
-| ไฟล์ | Path | Methods ที่ต้องเพิ่ม |
-|---|---|---|
-| `BudgetService.cs` | `OAGBudget.API\Services\Repository\` | `GetBudgetAllocateTransferMoreList()`, `GetBudgetAllocateTransferMoreDetail()`, `SaveBudgetAllocateTransferMoreDetail()`, `ConfirmBudgetAllocateTransferMore()`, **`GetBudgetRequestMoreForTransfer()`** (Query OAGWBG_BUDGETREQUEST ที่ StatusId = 20101), **`GetBudgetGovernmentByRequestId()`** (Query OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM) |
-
-#### Navigation / Menu
-
-| ไฟล์ | Path | รายละเอียด |
-|---|---|---|
-| *(ไฟล์ Menu/Navigation)* | `OAGBudget\Views\Shared\` หรือ `_Layout.cshtml` | เพิ่ม menu item "โอนจัดสรรเพิ่มเติม" |
+### 5.5 การบันทึกรายการโอนออก + ตัดยอด (Req 6.2)
+- บันทึกลง `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY`
+- ตัดยอดจาก `OAGWBG_BUDGETRECEIVE` ที่ตรงกัน (Match: Category + Plan + Product + Activity + BudgetSource)
+- ถ้าไม่พบ → สร้าง `OAGWBG_BUDGETRECEIVE` ใหม่ ยอด = 0
+- **กระบวนการนี้ reuse จาก `ConfirmBudgetAllocateTransfer` (BudgetService.cs line 15391)**
 
 ---
 
-## 4. DB Changes ที่อาจต้องทำ
+## 6. DB Changes ที่ต้องทำ
 
-| # | ตาราง | Column ใหม่ | ประเภท | วัตถุประสงค์ |
-|---|---|---|---|---|
-| DB-1 | `OAGWBG_BUDGETALLOCATETRANSFER` | `TRANSFERMORETYPE` หรือ `BUDGETREQUESTID` | NUMBER (nullable) | ระบุว่าเป็น TransferMore หรือเชื่อมกับคำขอ — ⚠️ ต้องตัดสินใจว่าจะแยกตาราง หรือเพิ่ม column ใน existing table |
+### ตัวเลือก (ต้องตัดสินใจก่อน Phase 1)
 
-> **ทางเลือก:**  
-> - **Option A (แนะนำ):** เพิ่ม column `BUDGETREQUESTID` ใน `OAGWBG_BUDGETALLOCATETRANSFER` — ถ้าเป็น NULL = TransferปกติH ถ้ามีค่า = TransferMore  
-> - **Option B:** สร้างตารางใหม่ `OAGWBG_BUDGETALLOCATETRANSFERMORE` แยกออกมา  
+**Option A (แนะนำ):** เพิ่ม column `TRANSFERTYPE` ใน `OAGWBG_BUDGETALLOCATETRANSFER`
+
+| ตาราง | Column ใหม่ | Type | ค่า |
+|---|---|---|---|
+| `OAGWBG_BUDGETALLOCATETRANSFER` | `TRANSFERTYPE` | VARCHAR2(10) nullable | NULL = โอนจัดสรรปกติ, `'MORE'` = โอนจัดสรรเพิ่มเติม |
+
+- ไม่ต้องสร้างตารางใหม่
+- List page filter ด้วย `TRANSFERTYPE = 'MORE'`
+- ความสัมพันธ์กับคำขอ (1:N) ดูผ่าน CATEGORY.Ref → BudgetGovernment.BudgetRequestId (ไม่ต้องเก็บที่ Header)
+
+**Option B:** สร้างตาราง `OAGWBG_BUDGETALLOCATETRANSFERMORE` แยก — code แยกชัดเจน แต่ซ้ำซ้อนมาก
+
+**DAL ที่ต้องอัปเดต (ถ้าเลือก Option A):**
+- `OagwbgBudgetallocatetransfer.cs` — เพิ่ม property `Transfertype`
+- `OagwbgVBudgetallocatetransfer.cs` — เพิ่ม `Transfertype`
 
 ---
 
-## 5. Flow ใหม่ที่ต้องสร้าง (BudgetAllocateTransferMore)
+## 7. Flow ระบบ
+
+### 7.1 หน้า List
 
 ```
 [UI: BudgetAllocateTransferMoreList.cshtml]
-    │  ใช้โครงสร้าง Filter + Table เหมือน BudgetAllocateTransferList
-    ▼
-[MVC/API: SearchBudgetAllocateTransferMoreList → GetBudgetAllocateTransferMoreList]
-    │  Query OAGWBG_V_BUDGETALLOCATETRANSFER (WHERE TransferMore flag หรือ BUDGETREQUESTID IS NOT NULL)
-    ▼
-[DB: SELECT จาก view เดิม หรือ view ใหม่ถ้าแยกตาราง]
+  → Filter: RoundNo, TransferDate, Region, BudgetYear, OrgType, Status
+  → POST: SearchBudgetAllocateTransferMoreList
+  → API: GetBudgetAllocateTransferMoreList
+  → Service: GetBudgetAllocateTransferMoreList()
+  → DB: SELECT จาก OAGWBG_V_BUDGETALLOCATETRANSFER
+        WHERE TRANSFERTYPE = 'MORE'
+```
 
-─────────────────────────────────────────────────────
+### 7.2 หน้า Detail — สร้าง/แก้ไข
 
-[UI: BudgetAllocateTransferMoreDetail.cshtml — หน้าใหม่]
-    │
-    ├─ [Header Section] (เหมือน BudgetAllocateTransferDetail)
-    │   TransferDate, Region, TransferOrgType, BudgetYear, RoundNo
-    │
-    ├─ [ปุ่ม "เลือกคำขอรับจัดสรรเพิ่มเติม"]
-    │   ▼
-    │   [Modal: เลือกคำขอ]
-    │       Query: OAGWBG_BUDGETREQUEST
-    │         WHERE StatusId = 20101 (ยืนยัน)
-    │         AND BudgetTypeId = 3 (More)
-    │         AND BudgetYear = ปีที่เลือก
-    │       แสดง: เลขที่คำขอ, หน่วยเบิกจ่าย, ศูนย์ต้นทุน, ยอดรวม
-    │
-    ├─ [ตารางรายการจากคำขอที่เลือก]
-    │   Query: OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM
-    │     WHERE BudgetRequestId = คำขอที่เลือก
-    │     AND สถานะยืนยัน (ยังไม่มีส่วนนี้ — ต้องพัฒนาเพิ่มที่หน้าขอรับจัดสรร)
-    │   แสดง: แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบ, ยอดที่ขอ
-    │
-    └─ [แต่ละรายการ: ปุ่ม "เลือกแหล่งเงินโอนออก"]
-        ▼
-        [Modal: เลือกแหล่งเงินโอนออก]
-            ├─ Dropdown: แหล่งเงิน (BudgetSource)
-            │
-            ├─ ถ้าเลือก 100 (เงินรายจ่ายประจำปี):
-            │   - ระบบ auto-fill รายการจากคำขอ (Category, Plan, Product, Activity, BudgetCode)
-            │   - ให้ระบุเพิ่ม: หน่วยเบิกจ่าย (DepartmentId), ศูนย์ต้นทุน (CostCenterId)
-            │   - fig = "budget" (ค่าคงที่)
-            │
-            └─ ถ้าเลือก 200, 400 (แหล่งเงินอื่น):
-                - ให้ระบุ: หน่วยเบิกจ่าย, ศูนย์ต้นทุน, แหล่งเงิน, แผนงาน,
-                           ผลผลิต, กิจกรรม, รายการ, รหัสงบประมาณ
+```
+[UI: BudgetAllocateTransferMoreDetail.cshtml]
+  │
+  ├─ [Header] TransferDate, Region, OrgType, BudgetYear, RoundNo (auto)
+  │
+  ├─ [ปุ่ม "เพิ่มจากคำขอ"] → Modal เลือกคำขอ (เรียกซ้ำได้เพื่อเพิ่มจากหลายคำขอ)
+  │     → API: GetBudgetRequestMoreForTransfer
+  │     → Service: GetBudgetRequestMoreForTransfer()
+  │     → DB: SELECT จาก OAGWBG_V_BUDGETREQUEST (View)
+  │           WHERE Budgetformtypeid = 3  ← ขอรับจัดสรรเพิ่มเติม (mandatory — ref: MasterService.cs:3107)
+  │             AND IS_COSTCENTER = 1     ← Cost Center type (mandatory — ใช้คู่กับ formtype=3 เสมอ)
+  │             AND Statusid = 20101      ← เฉพาะสถานะยืนยัน
+  │             AND Rn IS NULL            ← version ล่าสุดเท่านั้น
+  │             AND Budgetyear = ปีที่เลือก (optional filter จาก user)
+  │           หมายเหตุ: BudgetFormTypeId=3 หมายถึง "ขอรับจัดสรรเพิ่มเติม" (1=แผนงาน, 2=โครงการ, 3=เพิ่มเติม)
+  │     แสดง: เลขที่คำขอ, หน่วยเบิกจ่าย, ศูนย์ต้นทุน, ยอดรวม
+  │
+  ├─ [ตารางรายการจากคำขอ] (สะสมจากหลายคำขอได้)
+  │     → API: GetBudgetGovernmentByRequestId/{id}
+  │     → Service: GetBudgetGovernmentByRequestId()
+  │     → DB: SELECT จาก OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM
+  │           WHERE BudgetRequestId = คำขอที่เลือก
+  │           AND BudgetStatus = "A" (สถานะยืนยัน — ต้องยืนยัน field กับ PO)
+  │     แสดง: [คำขอ], แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบ, ยอดที่ขอ, ปุ่มโอนออก
+  │
+  └─ [แต่ละรายการ: ปุ่ม "ระบุโอนออก"] → Modal แหล่งเงินโอนออก
+        Dropdown: BudgetSource
+        ├─ Source = "100" (เงินรายจ่ายประจำปี):
+        │   Auto-fill: Category, Plan, Product, Activity, BudgetCode จากรายการรับโอน
+        │   Input: DepartmentId, CostCenterId
+        │   Fixed: Budgettypeid = "งบประมาณ" (ไม่ให้ user เลือก)
+        └─ Source อื่น (200, 400 ฯลฯ):
+            Input ทุก field: DepartmentId, CostCenterId, BudgetSource,
+                             Plan, Product, Activity, Category, BudgetCode
+```
 
-─────────────────────────────────────────────────────
+### 7.3 บันทึก
 
+```
 [UI: กด "บันทึก"]
-    ▼
-[MVC: SaveBudgetAllocateTransferMoreDetail]
-    ▼
-[API: SaveBudgetAllocateTransferMoreDetail]
-    ▼
-[Service: SaveBudgetAllocateTransferMoreDetail]
-    │  ├─ สร้าง/อัปเดต OAGWBG_BUDGETALLOCATETRANSFER (header + BUDGETREQUESTID)
-    │  ├─ สร้าง OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY (รายการโอนออก)
-    │  │   Ref = OagwbgBudgetgovernment.Id
-    │  │   BudgetSourceId = แหล่งเงินที่เลือก
-    │  │   รายการอื่นๆ จาก BudgetGovernment (Category, Plan, Product, Activity, BudgetCode)
-    │  └─ บันทึก OAGWBG_BUDGETRECEIVE (รายการรับโอน)
-    │      Departmentid = BudgetRequest.Departmentid (ผู้รับ)
-    │      Costcenterid = BudgetRequest.Costcenterid
-    │      BudgetSourceId = แหล่งเงินฝั่งโอนออก (ตาม Req 6.1)
-    │      Totalreceiveamount = ยอดโอน
+  → MVC: SaveBudgetAllocateTransferMoreDetail
+  → API: SaveBudgetAllocateTransferMoreDetail
+  → Service: SaveBudgetAllocateTransferMoreDetail()
+      ├─ สร้าง/อัปเดต OAGWBG_BUDGETALLOCATETRANSFER (TRANSFERTYPE = 'MORE')
+      ├─ สร้าง OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY (รายการโอนออก)
+      │   Ref = OagwbgBudgetgovernment.Id  ← เชื่อมกลับไปคำขอได้ผ่าน field นี้
+      │   BudgetSourceId = แหล่งเงินโอนออก
+      │   Budgettypeid = "งบประมาณ" (Source=100) หรือค่าที่ user เลือก
+      │   ⚠️ Type cast: Productid (long→string), Activitycodeid (long→string)
+      └─ สร้าง OAGWBG_BUDGETRECEIVE (รายการรับโอน)
+          Departmentid = BudgetRequest.Departmentid (ผู้รับ)
+          Costcenterid = BudgetRequest.Costcenterid
+          Budgetsourceid = แหล่งเงินฝั่งโอนออก  ← ตาม Req 6.1
+          Totalreceiveamount = ยอดโอน
+```
 
-─────────────────────────────────────────────────────
+### 7.4 ยืนยัน
 
-[UI: กดปุ่ม "ยืนยัน" (Confirm)]
-    ▼
-[MVC/API/Service: ConfirmBudgetAllocateTransferMore]
-    │  ใช้ logic เดิมจาก ConfirmBudgetAllocateTransfer (line 15391)
-    │  ├─ ตัดยอดจาก OAGWBG_BUDGETRECEIVE ต้นทาง
-    │  │   (Match: Category + Plan + Product + Activity + BudgetSource ของฝั่งโอนออก)
-    │  ├─ ถ้าไม่เจอ → สร้างใหม่ยอด = 0
-    │  └─ อัปเดตสถานะเป็น 80201
+```
+[UI: กดปุ่ม "ยืนยัน"]
+  → MVC: ConfirmBudgetAllocateTransferMore
+  → API: ConfirmBudgetAllocateTransferMore
+  → Service: ConfirmBudgetAllocateTransferMore()
+      └─ Reuse logic จาก ConfirmBudgetAllocateTransfer (line 15391):
+          ├─ Match OAGWBG_BUDGETRECEIVE ต้นทาง
+          │   (Categoryid + Productid + Activityid + Budgetsourceid)
+          ├─ ถ้าไม่เจอ → สร้างใหม่ ยอด = 0
+          ├─ ตัด Totaltransferamount ใน BudgetReceive ต้นทาง
+          └─ อัปเดตสถานะเป็น 80201
 ```
 
 ---
 
-## 6. สิ่งที่ต้องเปลี่ยนในแต่ละ Layer
+## 8. ไฟล์ที่ต้องสร้าง/แก้ไข
 
-| Layer | ไฟล์ | สิ่งที่ต้องทำ |
+### 8.1 ไฟล์ใหม่
+
+#### Views (`OAGBudget\Views\Budget\`)
+| ไฟล์ | รายละเอียด |
+|---|---|
+| `BudgetAllocateTransferMoreList.cshtml` | Copy จาก BudgetAllocateTransferList — Filter + Table เหมือนเดิม |
+| `BudgetAllocateTransferMoreDetail.cshtml` | Header จาก BudgetAllocateTransferDetail + ส่วนรายการจากคำขอ + Modal เลือกคำขอ + Modal โอนออก |
+| `_partialView/_tableBudgetAllocateTransferMoreList.cshtml` | Partial table สำหรับหน้า List |
+
+#### Models (`OAGBudget.Models\`)
+| ไฟล์ | Path | รายละเอียด |
 |---|---|---|
-| **DB** | Oracle | เพิ่ม column `BUDGETREQUESTID` ใน `OAGWBG_BUDGETALLOCATETRANSFER` (หรือตัดสินใจสร้างตารางใหม่) |
-| **DAL** | `OagwbgBudgetallocatetransfer.cs` | เพิ่ม property `Budgetrequestid` (ถ้าเพิ่ม column) |
-| **DAL** | `OagwbgVBudgetallocatetransfer.cs` | เพิ่ม `Budgetrequestid`, `RequestCode` (ถ้า view รองรับ) |
-| **Models** | ไฟล์ใหม่ | สร้าง Model/DTO สำหรับ TransferMore |
-| **API Service** | `BudgetService.cs` | เพิ่ม methods ใหม่: Get, Save, Confirm รวมถึง `GetBudgetRequestMoreForTransfer`, `GetBudgetGovernmentByRequestId` |
-| **API Controller** | `BudgetController.cs` (API) | เพิ่ม endpoints ใหม่ |
-| **MVC Controller** | `BudgetController.cs` (MVC) | เพิ่ม Actions ใหม่ + ส่ง dropdown ไปหน้า View |
-| **Views** | ไฟล์ใหม่ | สร้าง List + Detail views พร้อม Modals |
-| **Navigation** | `_Layout.cshtml` หรือ menu file | เพิ่มเมนู "โอนจัดสรรเพิ่มเติม" |
+| `BudgetAllocateTransferMoreDetailModel.cs` | `Data\` | Save model: Header + รายการ (รับโอน + โอนออก) |
+| `BudgetAllocateTransferMoreItemModel.cs` | `Data\` | แต่ละรายการ: ข้อมูลจากคำขอ + ข้อมูลโอนออก (Source, Dept, CostCenter, etc.) |
+| `BudgetAllocateTransferMoreDetailViewModel.cs` | `ViewModel\` | ViewModel → View: Header + Dropdowns + รายการจากคำขอ |
+
+### 8.2 ไฟล์ที่ต้องแก้ไข
+
+#### MVC Controller (`OAGBudget\Controllers\BudgetController.cs`)
+| Action | HTTP | รายละเอียด |
+|---|---|---|
+| `BudgetAllocateTransferMoreList()` | GET | Load dropdowns → Return View |
+| `SearchBudgetAllocateTransferMoreList()` | POST | Call API → JSON |
+| `BudgetAllocateTransferMoreDetail(int? id)` | GET | Load dropdowns + ดึง Detail → Return View |
+| `SaveBudgetAllocateTransferMoreDetail()` | POST | Call API Save |
+| `ConfirmBudgetAllocateTransferMore(int id)` | POST | Call API Confirm |
+| `CancelBudgetAllocateTransferMore(int id)` | POST | Call API Cancel |
+| `DeleteBudgetAllocateTransferMore(int id)` | POST | Call API Delete |
+
+#### API Controller (`OAGBudget.API\Controllers\BudgetController.cs`)
+| Endpoint | HTTP | Service Method |
+|---|---|---|
+| `GetBudgetAllocateTransferMoreList` | GET | `GetBudgetAllocateTransferMoreList()` |
+| `GetBudgetAllocateTransferMoreDetail/{id}` | GET | `GetBudgetAllocateTransferMoreDetail()` |
+| `SaveBudgetAllocateTransferMoreDetail` | POST | `SaveBudgetAllocateTransferMoreDetail()` |
+| `ConfirmBudgetAllocateTransferMore` | POST | `ConfirmBudgetAllocateTransferMore()` |
+| `CancelBudgetAllocateTransferMore` | POST | `ChangeStatus(..., "90109")` |
+| `DeleteBudgetAllocateTransferMore/{id}` | DELETE | `DeleteBudgetAllocateTransferMore()` |
+| **`GetBudgetRequestMoreForTransfer`** | GET | `GetBudgetRequestMoreForTransfer()` |
+| **`GetBudgetGovernmentByRequestId/{id}`** | GET | `GetBudgetGovernmentByRequestId()` |
+
+#### Service (`OAGBudget.API\Services\Repository\BudgetService.cs`)
+| Method | รายละเอียด |
+|---|---|
+| `GetBudgetAllocateTransferMoreList()` | Query OAGWBG_V_BUDGETALLOCATETRANSFER WHERE TRANSFERTYPE='MORE' |
+| `GetBudgetAllocateTransferMoreDetail(int id)` | Header + Category + ข้อมูลคำขออ้างอิง |
+| **`GetBudgetRequestMoreForTransfer()`** | Query OAGWBG_V_BUDGETREQUEST WHERE Budgetformtypeid=3 AND IS_COSTCENTER=1 AND Statusid=20101 AND Rn=NULL |
+| **`GetBudgetGovernmentByRequestId(int id)`** | Query OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM WHERE BudgetRequestId=id AND BudgetStatus="A" |
+| `SaveBudgetAllocateTransferMoreDetail()` | บันทึก Header (TRANSFERTYPE='MORE') + Category (Ref=BudgetGovernment.Id) + BudgetReceive |
+| `ConfirmBudgetAllocateTransferMore()` | Reuse/extract logic จาก ConfirmBudgetAllocateTransfer (line 15391) |
+
+#### Navigation / Menu
+เพิ่ม menu item **"โอนจัดสรรเพิ่มเติม"** ใน layout/menu file
 
 ---
 
-## 7. ประเด็นที่ต้องชี้แจงก่อนพัฒนา
+## 9. Mapping รายการคำขอ → รายการโอน
 
-> ❗ ข้อ 7.1-7.3 เป็นเรื่องสำคัญที่ต้องได้รับคำตอบจาก PO/User ก่อน
+```
+OagwbgBudgetgovernment (รายการคำขอ)      → OagwbgBudgetallocatetransferCategory
+──────────────────────────────────────────────────────────────────────────
+.Id                                       → .Ref  (มีอยู่แล้ว — เชื่อมกลับได้)
+.Categoryid                               → .Categoryid
+.Budgetplanid (int)          ⚠️ cast      → .Budgetplanid (string)
+.Budgettypeid (int)          ⚠️ cast      → .Budgettypeid (string)
+                                            หรือ fixed = "งบประมาณ" (Source=100)
+.Productid (long)            ⚠️ cast      → .Productid (string)
+.Activitycodeid (long)       ⚠️ cast      → .Activityid (string)
+.Budgetcode                               → .BudgetCodeId
+.Totalrequestamount                       → .Totalreceiveamount (default, แก้ไขได้)
+แหล่งเงินโอนออก (user เลือก)                → .BudgetSourceId
 
-### 7.1 โครงสร้าง DB — แยกตาราง หรือ เพิ่ม column ในตารางเดิม?
-- **Option A:** เพิ่ม column `BUDGETREQUESTID` ใน `OAGWBG_BUDGETALLOCATETRANSFER` (ง่ายกว่า ไม่ต้องสร้าง view ใหม่)
-- **Option B:** สร้างตาราง `OAGWBG_BUDGETALLOCATETRANSFERMORE` แยก (โค้ดแยกชัดเจน แต่ซ้ำซ้อน)
-
-### 7.2 สถานะยืนยันของรายการในคำขอ — ใช้จาก field ไหน?
-- Requirement ระบุ "ดึงรายการมาเฉพาะที่มีสถานะยืนยัน [ยังไม่มีส่วนนี้ที่หน้าขอรับจัดสรรเพิ่มเติม]"
-- ปัจจุบัน `OAGWBG_BUDGETGOVERNMENT` มี field `BudgetStatus` ("A"/"U") — ต้องยืนยันว่า "ยืนยัน" คือ BudgetStatus = "A" หรือไม่
-- ⚠️ ต้องพัฒนาฟังก์ชัน "ยืนยันรายการ" ที่หน้าขอรับจัดสรรเพิ่มเติมก่อน หรือใช้ตัวกรองระดับ Header (StatusId = 20101) แทน
-
-### 7.3 กรณี Source 100 — "fig เป็นงบประมาณ" หมายถึงอะไร?
-- Requirement 5.1 ระบุ "fig เป็นงบประมาณ" — ต้องชี้แจงว่า "fig" หมายถึง field ไหนในระบบ
-
-### 7.4 ความสัมพันธ์ใบโอน : คำขอ (1:1 หรือ 1:N)
-- 1 ใบโอนจัดสรรเพิ่มเติม รองรับได้ 1 คำขอเท่านั้น หรือหลายคำขอ?
+OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รายการรับโอน)
+──────────────────────────────────────────────────────────────────────────
+.Departmentid                             → .Departmentid
+.Costcenterid                             → .Costcenterid
+.Budgetyear                               → .Budgetyear
+แหล่งเงินโอนออก (user เลือก)                → .Budgetsourceid  (ตาม Req 6.1)
+ยอดโอน (user ระบุ)                          → .Totalreceiveamount
+```
 
 ---
 
-## 8. ความเสี่ยงและข้อควรระวัง
+## 10. ประเด็นที่ได้รับการยืนยัน ✅ และรอยืนยัน ⏳
+
+| # | ประเด็น | สถานะ | คำตอบ |
+|---|---|---|---|
+| 10.1 | DB structure — เพิ่ม column หรือสร้างตารางใหม่? | ⏳ รอ | แนะนำ Option A: เพิ่ม `TRANSFERTYPE VARCHAR2(10)` ใน OAGWBG_BUDGETALLOCATETRANSFER |
+| 10.2 | สถานะยืนยันรายการใน OAGWBG_BUDGETGOVERNMENT — ใช้ `BudgetStatus = "A"`? | ⏳ รอ | ชั่วคราวใช้ filter ระดับ Header (StatusId=20101) แทนได้ |
+| 10.3 | ✅ ความสัมพันธ์ใบโอน : คำขอ | ✅ | **1:N** — 1 ใบโอนรองรับหลายคำขอ |
+| 10.4 | ✅ "fig เป็นงบประมาณ" หมายถึงอะไร? | ✅ | **"fig" = "fix ค่า"** → `Budgettypeid` fixed = "งบประมาณ" เมื่อ Source = 100 |
+
+---
+
+## 11. ความเสี่ยงและข้อควรระวัง
 
 | # | ความเสี่ยง | ระดับ | แนวทาง |
 |---|---|---|---|
-| R-1 | Logic ConfirmBudgetAllocateTransfer ซับซ้อน (line 15391 ยาว ~250 บรรทัด) — ต้อง reuse ให้ถูกต้อง | สูง | สร้าง private method แยก แล้วเรียกจากทั้ง Confirm ปกติและ ConfirmMore |
-| R-2 | Type mismatch: `BudgetGovernment.Productid` เป็น `long?` แต่ `BudgetAllocateTransferCategory.Productid` เป็น `string?` | กลาง | ต้องแปลงค่าก่อน mapping |
-| R-3 | `BudgetGovernment.Activitycodeid` เป็น `long?` แต่ `BudgetAllocateTransferCategory.Activityid` เป็น `string?` | กลาง | ต้องแปลงค่าก่อน mapping |
-| R-4 | การสร้าง BudgetReceive ต้นทางใหม่ด้วยยอด 0 อาจส่งผลต่อ balance ในรายงาน | สูง | ตรวจสอบ logic คำนวณ balance ที่มีอยู่ |
-| R-5 | BudgetGovernment ในคำขออาจมีหลาย record — ต้องมี BudgetReceive ต้นทางตาม Category | กลาง | ต้องตัดสินใจว่าสร้างอัตโนมัติหรือให้ user ระบุ |
-| R-6 | ยังไม่มี "สถานะยืนยันรายการ" ที่หน้าขอรับจัดสรรเพิ่มเติม | สูง | ต้องพัฒนาส่วนนี้ก่อน หรือใช้ Filter ระดับ Header แทนชั่วคราว |
+| R-1 | `ConfirmBudgetAllocateTransfer` ซับซ้อน (~250 บรรทัด line 15391) | สูง | Extract เป็น private method แล้ว reuse จากทั้ง Confirm ปกติและ ConfirmMore |
+| R-2 | Type mismatch: `BudgetGovernment.Productid (long?)` vs `Category.Productid (string?)` | กลาง | `.ToString()` ก่อน mapping |
+| R-3 | Type mismatch: `BudgetGovernment.Activitycodeid (long?)` vs `Category.Activityid (string?)` | กลาง | `.ToString()` ก่อน mapping |
+| R-4 | Type mismatch: `BudgetGovernment.Budgetplanid (int?)` vs `Category.Budgetplanid (string?)` | กลาง | `.ToString()` ก่อน mapping |
+| R-5 | การสร้าง BudgetReceive ต้นทางใหม่ยอด 0 อาจกระทบ balance รายงาน | สูง | ตรวจสอบ balance calculation logic ก่อน |
+| R-6 | ยังไม่มี "ยืนยันรายการ" ที่หน้าขอรับจัดสรรเพิ่มเติม | สูง | ชั่วคราวใช้ Filter ระดับ Header (StatusId=20101) แทน หรือพัฒนาส่วนนี้ก่อน |
+| R-7 | 1:N — ใบโอนเดียวมีหลายคำขอ → รายการในตาราง Category อาจปะปนกัน | กลาง | แสดง UI แยกกลุ่มตามคำขอ, ใช้ `Ref` → `BudgetGovernment.BudgetRequestId` แยกกลุ่มได้ |
 
 ---
 
-## 9. ลำดับการพัฒนาที่แนะนำ
-
-> ⚠️ ทำได้หลังจากได้รับคำตอบประเด็น 7.1-7.4 แล้วเท่านั้น
+## 12. ลำดับการพัฒนา (Development Phases)
 
 ### Phase 1 — DB + DAL
-1. เพิ่ม column `BUDGETREQUESTID` ใน `OAGWBG_BUDGETALLOCATETRANSFER` (ถ้าเลือก Option A)
-2. อัปเดต `OagwbgBudgetallocatetransfer.cs` + View entity
+1. ตัดสินใจ DB structure (Option A/B)
+2. รัน ALTER TABLE เพิ่ม `TRANSFERTYPE` ใน `OAGWBG_BUDGETALLOCATETRANSFER`
+3. อัปเดต `OagwbgBudgetallocatetransfer.cs` + View entity
 
 ### Phase 2 — Backend Service + API
-1. เพิ่ม `GetBudgetRequestMoreForTransfer()` — Query คำขอสถานะ 20101
-2. เพิ่ม `GetBudgetGovernmentByRequestId()` — Query รายการในคำขอ
-3. เพิ่ม `SaveBudgetAllocateTransferMoreDetail()` — บันทึก Header + Category + BudgetReceive
-4. เพิ่ม `ConfirmBudgetAllocateTransferMore()` — reuse logic จาก ConfirmBudgetAllocateTransfer
-5. เพิ่ม endpoints ใน API Controller
+1. `GetBudgetRequestMoreForTransfer()` — Query คำขอสถานะ 20101
+2. `GetBudgetGovernmentByRequestId()` — Query รายการในคำขอ
+3. Extract private method จาก `ConfirmBudgetAllocateTransfer` (line 15391)
+4. `SaveBudgetAllocateTransferMoreDetail()` — Header (TRANSFERTYPE='MORE') + Category + BudgetReceive
+5. `ConfirmBudgetAllocateTransferMore()` — เรียก extracted private method
+6. เพิ่ม endpoints ใน API Controller
 
 ### Phase 3 — MVC Controller + Views
 1. เพิ่ม Actions ใน MVC BudgetController
-2. สร้าง `BudgetAllocateTransferMoreList.cshtml` (copy + adjust)
-3. สร้าง `BudgetAllocateTransferMoreDetail.cshtml` พร้อม modals
-4. เพิ่มเมนู Navigation
+2. สร้าง `BudgetAllocateTransferMoreList.cshtml`
+3. สร้าง `BudgetAllocateTransferMoreDetail.cshtml` พร้อม 2 modals (เลือกคำขอ + โอนออก)
+4. เพิ่ม menu navigation
 
 ### Phase 4 — Integration & Test
-1. ทดสอบ flow ครบ (สร้าง → เลือกคำขอ → เลือกแหล่งเงิน → บันทึก → ยืนยัน)
-2. ตรวจสอบยอด balance ใน OAGWBG_BUDGETRECEIVE หลังยืนยัน
-3. ทดสอบ edge case (Source 100 vs 200/400, ไม่พบ BudgetReceive ต้นทาง)
+1. ทดสอบ flow ครบ: สร้าง → เพิ่มจากหลายคำขอ → ระบุโอนออก (Source 100 และ 200/400) → บันทึก → ยืนยัน
+2. ตรวจสอบ balance ใน OAGWBG_BUDGETRECEIVE หลังยืนยัน
+3. Edge case: ไม่พบ BudgetReceive ต้นทาง → สร้างใหม่ยอด 0
+4. Edge case: ใบโอนเดียวดึงจาก 2+ คำขอ
