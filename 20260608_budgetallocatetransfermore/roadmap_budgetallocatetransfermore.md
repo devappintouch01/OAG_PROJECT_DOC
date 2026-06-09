@@ -471,7 +471,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 ```sql
 -- เพิ่ม IS_APPROVE ระดับ item ใน OAGWBG_BUDGETGOVERNMENT
 ALTER TABLE OAGWBG.OAGWBG_BUDGETGOVERNMENT
-    ADD IS_APPROVE NUMBER(1) DEFAULT 0;
+    ADD IS_APPROVE NUMBER(1) DEFAULT NULL;
 
 COMMENT ON COLUMN OAGWBG.OAGWBG_BUDGETGOVERNMENT.IS_APPROVE
     IS 'ระบุว่าให้งบประมาณหรือไม่ (0=ยังไม่อนุมัติ, 1=อนุมัติ)';
