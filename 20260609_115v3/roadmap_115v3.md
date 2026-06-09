@@ -421,3 +421,100 @@ Phase 6 — Report Text File
 4. **รายงาน Text File** — format และ layout ของ Text file ต้องการเป็นแบบใด?
 5. **ยอดโอนออก** — ผู้ใช้ต้องการกรอกยอดโอนออกในตาราง หรือกรอกใน Modal ก่อนเพิ่ม?
 6. **กรณี Confirm** — `Totalbalanceamount` ของ TransferIn ควรเป็น inAmount ตั้งแต่ draft หรือรอ confirm?
+
+---
+
+## Bug Report: เลขที่โอนของรายการรับโอนไม่ตรงกับรายการโอนออก
+
+> วันที่พบ: 2026-06-09
+
+### สาเหตุ
+
+เมื่อผู้ใช้กด **"บันทึกรายการรับโอน"** ใน `BudgetAdjustDetail_TransferIn_Edit.cshtml`:
+
+```javascript
+// line 324 — ส่ง Id ของ OagwbgBudgetadjust (รายการโอนออก) ไปเป็น payload.Id
+var transferOutId = transferOutRows[rowIdx].id || transferOutRows[rowIdx].Id;
+let payload = {
+    Id: transferOutId,        // ← OagwbgBudgetadjust.Id
+    IsTransferInAction: true,
+    TransferInItems: [...]
+};
+```
+
+ใน `SaveBudgetReceiveTransferIn` (BudgetService.cs line 13507) รับ `model.Id = OagwbgBudgetadjust.Id` แล้ว **ค้นหา BudgetTransfer ด้วย ID เดียวกันก่อนเลย**:
+
+```csharp
+int currentHeaderId = model.Id;   // = OagwbgBudgetadjust.Id
+
+// ❌ จุดบกพร่อง: ค้นหา BudgetTransfer ด้วย OagwbgBudgetadjust.Id โดยตรง
+var currentHeader = await _context.OagwbgBudgettransfers
+    .FirstOrDefaultAsync(x => x.Id == currentHeaderId);
+
+// Fallback เข้าเฉพาะตอน currentHeader == null
+if (currentHeader == null)
+{
+    var adjustForHeader = await _context.OagwbgBudgetadjusts
+        .FirstOrDefaultAsync(a => a.Id == model.Id);
+    // ... ถึงจะหา BudgetTransferId ที่ถูกต้อง
+}
+```
+
+Oracle ใช้ Sequence แยกกันต่อตาราง แต่ตัวเลข ID อาจซ้ำกันข้ามตารางได้:
+
+```
+OAGWBG_BUDGETADJUST:    Id = 5  → Budgettransferid = 12
+OAGWBG_BUDGETTRANSFER:  Id = 5  → (document อื่น เลขที่โอน "BG25-0005")  ← match ผิดตัว!
+OAGWBG_BUDGETTRANSFER:  Id = 12 → (document ที่ถูกต้อง เลขที่โอน "BG25-0012")
+```
+
+เมื่อ `BudgetAdjust.Id = 5` บังเอิญตรงกับ `BudgetTransfer.Id = 5` (document อื่น) → `currentHeader` ≠ null → ไม่เข้า fallback → BudgetReceive ใหม่ link ไปที่ BudgetTransfer.Id = 5 (เลขที่โอนผิด)
+
+### วิธีแก้
+
+**ไฟล์:** `OAGBudget.API\Services\Repository\BudgetService.cs` ~line 13507
+
+```csharp
+// ❌ ก่อนแก้ (เปิดช่องให้ match ผิดตัว)
+int currentHeaderId = model.Id;
+var currentHeader = await _context.OagwbgBudgettransfers
+    .FirstOrDefaultAsync(x => x.Id == currentHeaderId);
+if (currentHeader == null) { /* fallback */ }
+```
+
+```csharp
+// ✅ หลังแก้ (ค้นหา BudgetAdjust ก่อนเสมอ เพื่อหา BudgetTransferId จริง)
+var adjustRecord = await _context.OagwbgBudgetadjusts
+    .FirstOrDefaultAsync(a => a.Id == model.Id);
+
+if (adjustRecord?.Budgettransferid == null)
+{
+    await transaction.RollbackAsync();
+    return new TransferResultModel
+    {
+        Success = false,
+        Message = $"ไม่พบรายการโอนออกที่ระบุ (BudgetAdjust.Id: {model.Id})"
+    };
+}
+
+int currentHeaderId = adjustRecord.Budgettransferid.Value;
+var currentHeader = await _context.OagwbgBudgettransfers
+    .FirstOrDefaultAsync(x => x.Id == currentHeaderId);
+
+if (currentHeader == null)
+{
+    await transaction.RollbackAsync();
+    return new TransferResultModel
+    {
+        Success = false,
+        Message = $"ไม่พบ Header เลขที่โอน (BudgetTransfer.Id: {currentHeaderId})"
+    };
+}
+```
+
+### สรุปผลกระทบ
+
+| | เดิม (Bug) | ใหม่ (Fix) |
+|--|-----------|-----------|
+| ลำดับค้นหา | BudgetTransfer ก่อน → fallback ถ้า null | BudgetAdjust ก่อนเสมอ → ไล่ FK หา BudgetTransferId |
+| ความเสี่ยง | ถ้า `BudgetAdjust.Id` ตรงกับ `BudgetTransfer.Id` ของ document อื่น → link ผิดตัว | ไม่มีความเสี่ยง ไล่จาก FK ตาม schema |
