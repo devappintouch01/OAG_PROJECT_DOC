@@ -1,7 +1,7 @@
 # Roadmap: โอนจัดสรรเพิ่มเติม (BudgetAllocateTransferMore)
-**Version:** 1.0  
-**วันที่:** 2026-06-08  
-**สถานะ:** วิเคราะห์เสร็จสิ้น — พร้อมพัฒนา (รอยืนยัน DB structure)
+**Version:** 1.1  
+**วันที่:** 2026-06-09  
+**สถานะ:** วิเคราะห์เสร็จสิ้น — พร้อมพัฒนา ✅ (ทุกประเด็นยืนยันแล้ว)
 
 ---
 
@@ -30,12 +30,11 @@
 
 ### 3.1 ตารางหลัก (Read + Write)
 
-| ตาราง | วัตถุประสงค์ | C# Model |
-|---|---|---|
-| `OAGWBG_BUDGETALLOCATETRANSFER` | Header ใบโอนจัดสรรเพิ่มเติม | `OagwbgBudgetallocatetransfer` |
-| `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY` | รายการโอนออก (ต้นทาง) — `Ref` ชี้ไป `BudgetGovernment.Id` | `OagwbgBudgetallocatetransferCategory` |
-| `OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER` | ศูนย์ต้นทุนในใบโอน | `OagwbgBudgetallocatetransferCostcenter` |
-| `OAGWBG_BUDGETRECEIVE` | รายการรับโอน (ปลายทาง) + ตัดยอดต้นทาง | `OagwbgBudgetreceive` |
+| ตาราง | วัตถุประสงค์ | C# Model | หมายเหตุ |
+|---|---|---|---|
+| `OAGWBG_BUDGETALLOCATETRANSFERMORE` | Header ใบโอนจัดสรรเพิ่มเติม | `OagwbgBudgetallocatetransfermore` | **ตารางใหม่ (Option B)** |
+| `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` | รายการโอนออก (ต้นทาง) — `Ref` ชี้ไป `BudgetGovernment.Id` | `OagwbgBudgetallocatetransfermorecategory` | **ตารางใหม่ (Option B)** |
+| `OAGWBG_BUDGETRECEIVE` | รายการรับโอน (ปลายทาง) + ตัดยอดต้นทาง | `OagwbgBudgetreceive` | ใช้ร่วมกับ feature อื่น |
 
 ### 3.2 ตารางอ้างอิง (Read-only)
 
@@ -47,12 +46,11 @@
 
 ### 3.3 Oracle View (Read-only)
 
-| View | วัตถุประสงค์ |
-|---|---|
-| `OAGWBG_V_BUDGETALLOCATETRANSFER` | แสดงรายการ Header พร้อม join |
-| `OAGWBG_V_BUDGETALLOCATETRANSFER_CATEGORY` | แสดง Category พร้อม join |
-| `OAGWBG_V_BUDGETALLOCATETRANSFER_COSTCENTER` | แสดง Cost Center พร้อม join |
-| `OAGWBG_V_BUDGETRECEIVE` | แสดงรายการรับโอนพร้อม join |
+| View | วัตถุประสงค์ | หมายเหตุ |
+|---|---|---|
+| `OAGWBG_V_BUDGETALLOCATETRANSFERMORE` | แสดงรายการ Header พร้อม join | **View ใหม่ (Option B)** |
+| `OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY` | แสดง Category พร้อม join | **View ใหม่ (Option B)** |
+| `OAGWBG_V_BUDGETRECEIVE` | แสดงรายการรับโอนพร้อม join | ใช้ร่วมกับ feature อื่น |
 
 ### 3.4 Oracle Function
 
@@ -116,23 +114,87 @@
 
 ## 6. DB Changes ที่ต้องทำ
 
-### ตัวเลือก (ต้องตัดสินใจก่อน Phase 1)
+### ✅ ตัดสินใจแล้ว: Option B — สร้างตารางใหม่แยกออกมา
 
-**Option A (แนะนำ):** เพิ่ม column `TRANSFERTYPE` ใน `OAGWBG_BUDGETALLOCATETRANSFER`
+ไม่แตะตาราง `OAGWBG_BUDGETALLOCATETRANSFER` เดิมเลย — code แยกชัดเจน
 
-| ตาราง | Column ใหม่ | Type | ค่า |
-|---|---|---|---|
-| `OAGWBG_BUDGETALLOCATETRANSFER` | `TRANSFERTYPE` | VARCHAR2(10) nullable | NULL = โอนจัดสรรปกติ, `'MORE'` = โอนจัดสรรเพิ่มเติม |
+#### DDL ที่ต้องสร้างใน Oracle
 
-- ไม่ต้องสร้างตารางใหม่
-- List page filter ด้วย `TRANSFERTYPE = 'MORE'`
-- ความสัมพันธ์กับคำขอ (1:N) ดูผ่าน CATEGORY.Ref → BudgetGovernment.BudgetRequestId (ไม่ต้องเก็บที่ Header)
+**1. Header table** (โครงสร้างเหมือน `OAGWBG_BUDGETALLOCATETRANSFER` ทุกคอลัมน์):
 
-**Option B:** สร้างตาราง `OAGWBG_BUDGETALLOCATETRANSFERMORE` แยก — code แยกชัดเจน แต่ซ้ำซ้อนมาก
+```sql
+CREATE TABLE OAGWBG_BUDGETALLOCATETRANSFERMORE (
+    ID                   NUMBER        NOT NULL,
+    BUDGETYEAR           NUMBER(4),
+    ROUNDNO              NUMBER,
+    TRANSFERDATE         DATE,
+    REGIONID             VARCHAR2(20),
+    ORGTYPEID            VARCHAR2(20),
+    DEPARTMENTID         VARCHAR2(20),
+    COSTCENTERID         VARCHAR2(20),
+    BUDGETSOURCEID       VARCHAR2(20),
+    REMARK               VARCHAR2(4000),
+    STATUSID             NUMBER,
+    CREATEBY             VARCHAR2(100),
+    CREATEDATE           DATE,
+    UPDATEBY             VARCHAR2(100),
+    UPDATEDATE           DATE,
+    CONSTRAINT PK_BUDGETALLOCATETRANSFERMORE PRIMARY KEY (ID)
+);
+-- Sequence ใหม่
+CREATE SEQUENCE SEQ_BUDGETALLOCATETRANSFERMORE START WITH 1 INCREMENT BY 1;
+```
 
-**DAL ที่ต้องอัปเดต (ถ้าเลือก Option A):**
-- `OagwbgBudgetallocatetransfer.cs` — เพิ่ม property `Transfertype`
-- `OagwbgVBudgetallocatetransfer.cs` — เพิ่ม `Transfertype`
+**2. Category table** (โครงสร้างเหมือน `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY`):
+
+```sql
+CREATE TABLE OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY (
+    ID                          NUMBER        NOT NULL,
+    BUDGETALLOCATETRANSFERMOREID NUMBER       NOT NULL,  -- FK → OAGWBG_BUDGETALLOCATETRANSFERMORE.ID
+    REF                         NUMBER,                  -- FK → OAGWBG_BUDGETGOVERNMENT.ID
+    BUDGETSOURCEID              VARCHAR2(20),
+    DEPARTMENTID                VARCHAR2(20),
+    COSTCENTERID                VARCHAR2(20),
+    CATEGORYID                  VARCHAR2(20),
+    BUDGETPLANID                VARCHAR2(20),
+    BUDGETTYPEID                VARCHAR2(20),
+    PRODUCTID                   VARCHAR2(20),
+    ACTIVITYID                  VARCHAR2(20),
+    BUDGETCODEID                VARCHAR2(20),
+    TOTALTRANSFERAMOUNT         NUMBER(18,2),
+    CREATEBY                    VARCHAR2(100),
+    CREATEDATE                  DATE,
+    CONSTRAINT PK_BUDGETALLOCATETRANSFERMORE_CAT PRIMARY KEY (ID),
+    CONSTRAINT FK_BATM_CAT_HEADER FOREIGN KEY (BUDGETALLOCATETRANSFERMOREID)
+        REFERENCES OAGWBG_BUDGETALLOCATETRANSFERMORE(ID)
+);
+CREATE SEQUENCE SEQ_BUDGETALLOCATETRANSFERMORE_CAT START WITH 1 INCREMENT BY 1;
+```
+
+**3. Views ใหม่** (mirror จาก View เดิม แต่ join กับตารางใหม่):
+
+```sql
+CREATE OR REPLACE VIEW OAGWBG_V_BUDGETALLOCATETRANSFERMORE AS
+  SELECT h.*, r.REGIONNAME, o.ORGTYPENAME, s.STATUSNAME
+  FROM OAGWBG_BUDGETALLOCATETRANSFERMORE h
+  LEFT JOIN ...  -- join ตามแบบ OAGWBG_V_BUDGETALLOCATETRANSFER เดิม
+
+CREATE OR REPLACE VIEW OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY AS
+  SELECT c.*, ...
+  FROM OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY c
+  LEFT JOIN ...  -- join ตามแบบ OAGWBG_V_BUDGETALLOCATETRANSFER_CATEGORY เดิม
+```
+
+#### DAL C# Models ใหม่ที่ต้องสร้าง (`OAGBudget.DAL\Models\`)
+
+| ไฟล์ | ตาราง/View |
+|---|---|
+| `OagwbgBudgetallocatetransfermore.cs` | `OAGWBG_BUDGETALLOCATETRANSFERMORE` |
+| `OagwbgBudgetallocatetransfermorecategory.cs` | `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` |
+| `OagwbgVBudgetallocatetransfermore.cs` | `OAGWBG_V_BUDGETALLOCATETRANSFERMORE` |
+| `OagwbgVBudgetallocatetransfermorecategory.cs` | `OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY` |
+
+ตาราง `OAGWBG_BUDGETALLOCATETRANSFER` และ `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY` เดิม **ไม่ต้องแก้ไขใดๆ**
 
 ---
 
@@ -146,8 +208,7 @@
   → POST: SearchBudgetAllocateTransferMoreList
   → API: GetBudgetAllocateTransferMoreList
   → Service: GetBudgetAllocateTransferMoreList()
-  → DB: SELECT จาก OAGWBG_V_BUDGETALLOCATETRANSFER
-        WHERE TRANSFERTYPE = 'MORE'
+  → DB: SELECT จาก OAGWBG_V_BUDGETALLOCATETRANSFERMORE
 ```
 
 ### 7.2 หน้า Detail — สร้าง/แก้ไข
@@ -172,9 +233,14 @@
   ├─ [ตารางรายการจากคำขอ] (สะสมจากหลายคำขอได้)
   │     → API: GetBudgetGovernmentByRequestId/{id}
   │     → Service: GetBudgetGovernmentByRequestId()
-  │     → DB: SELECT จาก OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM
-  │           WHERE BudgetRequestId = คำขอที่เลือก
-  │           AND BudgetStatus = "C"  ← ยืนยันแล้ว (confirmed by PO)
+  │     → DB: SELECT g.* จาก OAGWBG_BUDGETGOVERNMENT g
+  │           JOIN OAGWBG_BUDGETREQUEST r ON g.BUDGETREQUESTID = r.ID
+  │           WHERE g.BUDGETREQUESTID = คำขอที่เลือก
+  │             AND g.BUDGETSTATUS = 'C'    ← ยืนยันรายการแล้ว
+  │             AND r.IS_APPROVE = 1        ← ให้งบประมาณแล้ว (ดู⚠️ ด้านล่าง)
+  │     ⚠️ IS_APPROVE อยู่ใน OAGWBG_BUDGETREQUEST (Header) ไม่ใช่ OAGWBG_BUDGETGOVERNMENT
+  │        จึงต้อง JOIN กับ BUDGETREQUEST — ใช้ตารางโดยตรง ไม่ใช่ View
+  │        เพราะ OAGWBG_V_BUDGETGOVERNMENT และ OAGWBG_V_BUDGETREQUEST ไม่มี IS_APPROVE
   │     แสดง: [คำขอ], แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบ, ยอดที่ขอ, ปุ่มโอนออก
   │
   └─ [แต่ละรายการ: ปุ่ม "ระบุโอนออก"] → Modal แหล่งเงินโอนออก
@@ -196,8 +262,8 @@
   → MVC: SaveBudgetAllocateTransferMoreDetail
   → API: SaveBudgetAllocateTransferMoreDetail
   → Service: SaveBudgetAllocateTransferMoreDetail()
-      ├─ สร้าง/อัปเดต OAGWBG_BUDGETALLOCATETRANSFER (TRANSFERTYPE = 'MORE')
-      ├─ สร้าง OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY (รายการโอนออก)
+      ├─ สร้าง/อัปเดต OAGWBG_BUDGETALLOCATETRANSFERMORE (Header)
+      ├─ สร้าง OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY (รายการโอนออก)
       │   Ref = OagwbgBudgetgovernment.Id  ← เชื่อมกลับไปคำขอได้ผ่าน field นี้
       │   BudgetSourceId = แหล่งเงินโอนออก
       │   ถ้า Source = 100:
@@ -280,11 +346,11 @@
 
 | Method | รายละเอียด |
 |---|---|
-| `GetBudgetAllocateTransferMoreList()` | Query OAGWBG_V_BUDGETALLOCATETRANSFER WHERE TRANSFERTYPE='MORE' |
-| `GetBudgetAllocateTransferMoreDetail(int id)` | Header + Category + ข้อมูลคำขออ้างอิง |
+| `GetBudgetAllocateTransferMoreList()` | Query OAGWBG_V_BUDGETALLOCATETRANSFERMORE |
+| `GetBudgetAllocateTransferMoreDetail(int id)` | Header (OAGWBG_BUDGETALLOCATETRANSFERMORE) + Category (OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY) + ข้อมูลคำขออ้างอิง |
 | **`GetBudgetRequestMoreForTransfer()`** | Query OAGWBG_V_BUDGETREQUEST WHERE Budgetformtypeid=3 AND IS_COSTCENTER=1 AND Statusid=20101 AND Rn=NULL |
-| **`GetBudgetGovernmentByRequestId(int id)`** | Query OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETGOVERNMENTITEM WHERE BudgetRequestId=id AND BudgetStatus="A" |
-| `SaveBudgetAllocateTransferMoreDetail()` | บันทึก Header (TRANSFERTYPE='MORE') + Category (Ref=BudgetGovernment.Id) + BudgetReceive |
+| **`GetBudgetGovernmentByRequestId(int id)`** | JOIN OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETREQUEST WHERE BudgetRequestId=id AND BudgetStatus="C" AND IS_APPROVE=1 — ต้องใช้ตารางโดยตรง (ไม่ใช่ View เพราะ View ไม่มี IS_APPROVE) |
+| `SaveBudgetAllocateTransferMoreDetail()` | บันทึก OAGWBG_BUDGETALLOCATETRANSFERMORE (Header) + OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY (Ref=BudgetGovernment.Id) + OAGWBG_BUDGETRECEIVE |
 | `ConfirmBudgetAllocateTransferMore()` | Reuse/extract logic จาก ConfirmBudgetAllocateTransfer (line 15391) |
 
 #### Navigation / Menu
@@ -295,7 +361,7 @@
 ## 9. Mapping รายการคำขอ → รายการโอน
 
 ```
-OagwbgBudgetgovernment (รายการคำขอ)      → OagwbgBudgetallocatetransferCategory
+OagwbgBudgetgovernment (รายการคำขอ)      → OagwbgBudgetallocatetransfermorecategory
 ──────────────────────────────────────────────────────────────────────────
 .Id                                       → .Ref  (มีอยู่แล้ว — เชื่อมกลับได้)
 .Categoryid                               → .Categoryid
@@ -323,8 +389,8 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 
 | # | ประเด็น | สถานะ | คำตอบ |
 |---|---|---|---|
-| 10.1 | DB structure — เพิ่ม column หรือสร้างตารางใหม่? | ⏳ รอ | แนะนำ Option A: เพิ่ม `TRANSFERTYPE VARCHAR2(10)` ใน OAGWBG_BUDGETALLOCATETRANSFER |
-| 10.2 | สถานะยืนยันรายการใน OAGWBG_BUDGETGOVERNMENT — ใช้ `BudgetStatus = "A"`? | ⏳ รอ | ชั่วคราวใช้ filter ระดับ Header (StatusId=20101) แทนได้ |
+| 10.1 | DB structure — เพิ่ม column หรือสร้างตารางใหม่? | ✅ | **Option B** — สร้างตารางใหม่แยก: `OAGWBG_BUDGETALLOCATETRANSFERMORE` + `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` ไม่แตะตารางเดิม |
+| 10.2 | เงื่อนไข filter รายการใน OAGWBG_BUDGETGOVERNMENT | ✅ | **`BudgetStatus = "C" AND IS_APPROVE = 1`** — `IS_APPROVE` อยู่ใน OAGWBG_BUDGETREQUEST (Header, ไม่ใช่ Line item) ต้อง JOIN กับ BUDGETREQUEST และใช้ตารางโดยตรง (ไม่ใช่ View เพราะ View ไม่มี IS_APPROVE) |
 | 10.3 | ✅ ความสัมพันธ์ใบโอน : คำขอ | ✅ | **1:N** — 1 ใบโอนรองรับหลายคำขอ |
 | 10.4 | ✅ "fix เป็นงบประมาณ" หมายถึงอะไร? | ✅ | **fix DepartmentId = 2900600000 และ CostCenterId = 2906999999** (หน่วยเบิกจ่าย/ศูนย์ต้นทุนของงบประมาณ) — `Budgettypeid` ไม่เกี่ยวข้อง ผู้วิเคราะห์นำมาเองจากโค้ดโดยไม่ถูกต้อง |
 
@@ -340,16 +406,26 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | R-4 | Type mismatch: `BudgetGovernment.Budgetplanid (int?)` vs `Category.Budgetplanid (string?)` | กลาง | `.ToString()` ก่อน mapping |
 | R-5 | การสร้าง BudgetReceive ต้นทางใหม่ยอด 0 อาจกระทบ balance รายงาน | สูง | ตรวจสอบ balance calculation logic ก่อน |
 | R-6 | ยังไม่มี "ยืนยันรายการ" ที่หน้าขอรับจัดสรรเพิ่มเติม | สูง | ชั่วคราวใช้ Filter ระดับ Header (StatusId=20101) แทน หรือพัฒนาส่วนนี้ก่อน |
-| R-7 | 1:N — ใบโอนเดียวมีหลายคำขอ → รายการในตาราง Category อาจปะปนกัน | กลาง | แสดง UI แยกกลุ่มตามคำขอ, ใช้ `Ref` → `BudgetGovernment.BudgetRequestId` แยกกลุ่มได้ |
+| R-7 | 1:N — ใบโอนเดียวมีหลายคำขอ → รายการใน OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY อาจปะปนกัน | กลาง | แสดง UI แยกกลุ่มตามคำขอ, ใช้ `Ref` → `BudgetGovernment.BudgetRequestId` แยกกลุ่มได้ |
+| R-8 | `IS_APPROVE` ไม่มีใน `OAGWBG_V_BUDGETGOVERNMENT` และ `OAGWBG_V_BUDGETREQUEST` — View ทั้งสองไม่ได้ expose field นี้ | กลาง | `GetBudgetGovernmentByRequestId()` ต้อง query ตารางโดยตรงด้วย EF Core JOIN: `_context.OagwbgBudgetgovernments.Join(_context.OagwbgBudgetrequests, ...)` แทนการใช้ View |
 
 ---
 
 ## 12. ลำดับการพัฒนา (Development Phases)
 
 ### Phase 1 — DB + DAL
-1. ตัดสินใจ DB structure (Option A/B)
-2. รัน ALTER TABLE เพิ่ม `TRANSFERTYPE` ใน `OAGWBG_BUDGETALLOCATETRANSFER`
-3. อัปเดต `OagwbgBudgetallocatetransfer.cs` + View entity
+1. รัน DDL สร้างตารางใหม่:
+   - `OAGWBG_BUDGETALLOCATETRANSFERMORE` + Sequence
+   - `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` + Sequence
+2. สร้าง Oracle Views:
+   - `OAGWBG_V_BUDGETALLOCATETRANSFERMORE`
+   - `OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY`
+3. สร้าง DAL C# Models:
+   - `OagwbgBudgetallocatetransfermore.cs`
+   - `OagwbgBudgetallocatetransfermorecategory.cs`
+   - `OagwbgVBudgetallocatetransfermore.cs`
+   - `OagwbgVBudgetallocatetransfermorecategory.cs`
+4. Register Models ใน `OagwbgContext.cs`
 
 ### Phase 2 — Backend Service + API
 1. `GetBudgetRequestMoreForTransfer()` — Query คำขอสถานะ 20101
