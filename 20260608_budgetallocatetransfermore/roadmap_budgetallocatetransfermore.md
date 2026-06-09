@@ -112,7 +112,7 @@
 - `Departmentid` = BudgetRequest.Departmentid, `Costcenterid` = BudgetRequest.Costcenterid
 
 ### 5.5 การบันทึกรายการโอนออก + ตัดยอด (Req 6.2)
-- บันทึกลง `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY`
+- บันทึกลง `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY`
 - ตัดยอดจาก `OAGWBG_BUDGETRECEIVE` ที่ตรงกัน (Match: Category + Plan + Product + Activity + BudgetSource + CostCenter + Department + BudgetYear)
 - ถ้าไม่พบ → สร้าง `OAGWBG_BUDGETRECEIVE` ใหม่ ยอด = 0
 - **กระบวนการนี้ reuse จาก `ConfirmBudgetAllocateTransfer` (BudgetService.cs line 15391)** โดยกระบวนการตัดยอดต้องใช้รายการโอนออกจากจาก ข้อ 5.2 และ 5.3
@@ -395,7 +395,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | # | ประเด็น | สถานะ | คำตอบ |
 |---|---|---|---|
 | 10.1 | DB structure — เพิ่ม column หรือสร้างตารางใหม่? | ✅ | **Option B** — สร้างตารางใหม่แยก: `OAGWBG_BUDGETALLOCATETRANSFERMORE` + `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` ไม่แตะตารางเดิม |
-| 10.2 | เงื่อนไข filter รายการใน OAGWBG_BUDGETGOVERNMENT | ✅ | **`BudgetStatus = "C" AND IS_APPROVE = 1`** — `IS_APPROVE` อยู่ใน OAGWBG_BUDGETREQUEST (Header, ไม่ใช่ Line item) ต้อง JOIN กับ BUDGETREQUEST และใช้ตารางโดยตรง (ไม่ใช่ View เพราะ View ไม่มี IS_APPROVE) |
+| 10.2 | เงื่อนไข filter รายการใน OAGWBG_BUDGETGOVERNMENT | ✅ | **`BudgetStatus = "C" AND IS_APPROVE = 1`** — `IS_APPROVE` จะถูกเพิ่มใน `OAGWBG_V_BUDGETGOVERNMENT` ระดับ item (prerequisite) ทำให้ query ใช้ View ได้โดยตรง ไม่ต้อง JOIN |
 | 10.3 | ✅ ความสัมพันธ์ใบโอน : คำขอ | ✅ | **1:N** — 1 ใบโอนรองรับหลายคำขอ |
 | 10.4 | ✅ "fix เป็นงบประมาณ" หมายถึงอะไร? | ✅ | **fix DepartmentId = 2900600000 และ CostCenterId = 2906999999** (หน่วยเบิกจ่าย/ศูนย์ต้นทุนของงบประมาณ) — `Budgettypeid` ไม่เกี่ยวข้อง ผู้วิเคราะห์นำมาเองจากโค้ดโดยไม่ถูกต้อง |
 
