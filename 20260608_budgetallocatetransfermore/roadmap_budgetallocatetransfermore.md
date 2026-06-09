@@ -93,10 +93,10 @@
 
 ### 5.2 กรณี BudgetSource = "100" (เงินรายจ่ายประจำปี)
 - ระบบ **auto-fill** รายการโอนออกจากรายการรับโอนเดียวกัน (Category, Plan, Product, Activity, BudgetCode เหมือนกัน)
-- **DepartmentId และ CostCenterId ถูก fix เป็นค่าคงที่** — user ไม่ต้องเลือก:
-  - `DEPARTMENTID = 2900600000` (fixed)
-  - `COSTCENTERID = 2906999999` (fixed)
-- **`Budgettypeid`** — ⚠️ ต้องชี้แจงกับ PO: ในหน้าโอนจัดสรรปกติ ค่านี้ดึงจาก `OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY` (line 8437) ไม่ใช่ string "งบประมาณ" ตรงๆ ต้องยืนยันว่า Source=100 ให้ใช้ค่าจาก function เดิม หรือมี BudgetTypeId เฉพาะสำหรับ "งบประมาณ"
+- **หน่วยเบิกจ่ายและศูนย์ต้นทุน fix เป็นค่าของ "งบประมาณ"** — user ไม่ต้องเลือก:
+  - `DEPARTMENTID = 2900600000` (fixed — หน่วยเบิกจ่ายงบประมาณ)
+  - `COSTCENTERID = 2906999999` (fixed — ศูนย์ต้นทุนงบประมาณ)
+- นี่คือความหมายของ "fix เป็นงบประมาณ" ใน Requirement 5.1 — ไม่เกี่ยวกับ field `Budgettypeid` ในฐานข้อมูล
 
 ### 5.3 กรณี BudgetSource อื่น เช่น "200", "400"
 - User ต้องเลือกทุก field เอง: หน่วยเบิกจ่าย, ศูนย์ต้นทุน, แหล่งเงิน, แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบประมาณ
@@ -181,10 +181,9 @@
         Dropdown: BudgetSource
         ├─ Source = "100" (เงินรายจ่ายประจำปี):
         │   Auto-fill: Category, Plan, Product, Activity, BudgetCode จากรายการรับโอน
-        │   Fixed ทั้งหมด (ไม่มี input ให้ user):
-        │     DEPARTMENTID = 2900600000
-        │     COSTCENTERID = 2906999999
-        │     Budgettypeid = ??? ← ⚠️ ต้องยืนยัน (ดูหมายเหตุข้อ 5.2)
+        │   Fixed (ไม่มี input ให้ user):
+        │     DEPARTMENTID = 2900600000  ← หน่วยเบิกจ่ายงบประมาณ
+        │     COSTCENTERID = 2906999999  ← ศูนย์ต้นทุนงบประมาณ
         └─ Source อื่น (200, 400 ฯลฯ):
             Input ทุก field: DepartmentId, CostCenterId, BudgetSource,
                              Plan, Product, Activity, Category, BudgetCode
@@ -202,9 +201,8 @@
       │   Ref = OagwbgBudgetgovernment.Id  ← เชื่อมกลับไปคำขอได้ผ่าน field นี้
       │   BudgetSourceId = แหล่งเงินโอนออก
       │   ถ้า Source = 100:
-      │     Departmentid = "2900600000" (fixed)
-      │     Costcenterid = "2906999999" (fixed)
-      │     Budgettypeid = "งบประมาณ"   (fixed)
+      │     Departmentid = "2900600000" (fixed — หน่วยเบิกจ่ายงบประมาณ)
+      │     Costcenterid = "2906999999" (fixed — ศูนย์ต้นทุนงบประมาณ)
       │   ถ้า Source อื่น: ใช้ค่าที่ user เลือก
       │   ⚠️ Type cast: Productid (long→string), Activitycodeid (long→string)
       └─ สร้าง OAGWBG_BUDGETRECEIVE (รายการรับโอน)
@@ -328,7 +326,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | 10.1 | DB structure — เพิ่ม column หรือสร้างตารางใหม่? | ⏳ รอ | แนะนำ Option A: เพิ่ม `TRANSFERTYPE VARCHAR2(10)` ใน OAGWBG_BUDGETALLOCATETRANSFER |
 | 10.2 | สถานะยืนยันรายการใน OAGWBG_BUDGETGOVERNMENT — ใช้ `BudgetStatus = "A"`? | ⏳ รอ | ชั่วคราวใช้ filter ระดับ Header (StatusId=20101) แทนได้ |
 | 10.3 | ✅ ความสัมพันธ์ใบโอน : คำขอ | ✅ | **1:N** — 1 ใบโอนรองรับหลายคำขอ |
-| 10.4 | ⚠️ "fix เป็นงบประมาณ" — Budgettypeid ค่าจริงคืออะไร? | ⚠️ รอ | ในหน้าโอนจัดสรรปกติ `Budgettypeid` ดึงจาก `OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY` (line 8437) ไม่ใช่ string "งบประมาณ" ต้องยืนยันว่า Source=100 ให้ใช้ค่า code ใดจาก function หรือ master data |
+| 10.4 | ✅ "fix เป็นงบประมาณ" หมายถึงอะไร? | ✅ | **fix DepartmentId = 2900600000 และ CostCenterId = 2906999999** (หน่วยเบิกจ่าย/ศูนย์ต้นทุนของงบประมาณ) — `Budgettypeid` ไม่เกี่ยวข้อง ผู้วิเคราะห์นำมาเองจากโค้ดโดยไม่ถูกต้อง |
 
 ---
 
