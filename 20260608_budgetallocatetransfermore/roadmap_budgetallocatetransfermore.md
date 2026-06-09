@@ -12,7 +12,7 @@
 - ดึงรายการจาก **ขอรับจัดสรรเพิ่มเติม (BudgetRequestMoreCostcenter)** ที่สถานะยืนยัน (20101)
 - 1 ใบโอนจัดสรรเพิ่มเติม รองรับ **หลายคำขอ (1:N)**
 - แต่ละรายการจากคำขอ ผู้ใช้ระบุว่าจะโอนออกจากแหล่งเงินใด
-- บันทึกลงตาราง OAGWBG_BUDGETRECEIVE (รับโอน) และ OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY (โอนออก)
+- บันทึกลงตาราง OAGWBG_BUDGETRECEIVE (รับโอน) และ OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY (โอนออก)
 - กระบวนการยืนยัน reuse logic เดิมจาก ConfirmBudgetAllocateTransfer
 
 ---
@@ -23,6 +23,13 @@
 |---|---|---|
 | โอนจัดสรร | BudgetAllocateTransfer | ยืม List + Header structure |
 | ขอรับจัดสรรเพิ่มเติม | BudgetRequestMoreCostcenter | แหล่งข้อมูลคำขอที่จะโอน (หลายคำขอต่อ 1 ใบโอน) |
+
+### ⚠️ Prerequisite — ต้องทำก่อน BudgetAllocateTransferMore
+
+| งาน | รายละเอียด | ผลกระทบ |
+|---|---|---|
+| เพิ่ม `IS_APPROVE` ใน `OAGWBG_V_BUDGETGOVERNMENT` | การอนุมัติย้ายลงระดับ item (ไม่ใช่ Header) | `GetBudgetGovernmentByRequestId()` ใช้ View ได้โดยตรง ไม่ต้อง JOIN BUDGETREQUEST |
+| นำ `IS_APPROVE` ออกจาก `OAGWBG_BUDGETREQUEST` | Header ไม่มี approval flag อีกต่อไป | `OagwbgBudgetrequest.IsApprove` และ `OagwbgVBudgetrequest` จะไม่มี field นี้ |
 
 ---
 
@@ -233,14 +240,12 @@ CREATE OR REPLACE VIEW OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY AS
   ├─ [ตารางรายการจากคำขอ] (สะสมจากหลายคำขอได้)
   │     → API: GetBudgetGovernmentByRequestId/{id}
   │     → Service: GetBudgetGovernmentByRequestId()
-  │     → DB: SELECT g.* จาก OAGWBG_BUDGETGOVERNMENT g
-  │           JOIN OAGWBG_BUDGETREQUEST r ON g.BUDGETREQUESTID = r.ID
-  │           WHERE g.BUDGETREQUESTID = คำขอที่เลือก
-  │             AND g.BUDGETSTATUS = 'C'    ← ยืนยันรายการแล้ว
-  │             AND r.IS_APPROVE = 1        ← ให้งบประมาณแล้ว (ดู⚠️ ด้านล่าง)
-  │     ⚠️ IS_APPROVE อยู่ใน OAGWBG_BUDGETREQUEST (Header) ไม่ใช่ OAGWBG_BUDGETGOVERNMENT
-  │        จึงต้อง JOIN กับ BUDGETREQUEST — ใช้ตารางโดยตรง ไม่ใช่ View
-  │        เพราะ OAGWBG_V_BUDGETGOVERNMENT และ OAGWBG_V_BUDGETREQUEST ไม่มี IS_APPROVE
+  │     → DB: SELECT จาก OAGWBG_V_BUDGETGOVERNMENT
+  │           WHERE BudgetRequestId = คำขอที่เลือก
+  │             AND BudgetStatus = 'C'    ← ยืนยันรายการแล้ว
+  │             AND IS_APPROVE = 1        ← อนุมัติระดับ item (field ใหม่ใน View — prerequisite)
+  │     หมายเหตุ: IS_APPROVE จะถูกเพิ่มใน OAGWBG_V_BUDGETGOVERNMENT (item-level)
+  │               และนำออกจาก OAGWBG_BUDGETREQUEST ก่อน feature นี้จะเริ่มพัฒนา
   │     แสดง: [คำขอ], แผนงาน, ผลผลิต, กิจกรรม, รายการ, รหัสงบ, ยอดที่ขอ, ปุ่มโอนออก
   │
   └─ [แต่ละรายการ: ปุ่ม "ระบุโอนออก"] → Modal แหล่งเงินโอนออก
@@ -349,7 +354,7 @@ CREATE OR REPLACE VIEW OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY AS
 | `GetBudgetAllocateTransferMoreList()` | Query OAGWBG_V_BUDGETALLOCATETRANSFERMORE |
 | `GetBudgetAllocateTransferMoreDetail(int id)` | Header (OAGWBG_BUDGETALLOCATETRANSFERMORE) + Category (OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY) + ข้อมูลคำขออ้างอิง |
 | **`GetBudgetRequestMoreForTransfer()`** | Query OAGWBG_V_BUDGETREQUEST WHERE Budgetformtypeid=3 AND IS_COSTCENTER=1 AND Statusid=20101 AND Rn=NULL |
-| **`GetBudgetGovernmentByRequestId(int id)`** | JOIN OAGWBG_BUDGETGOVERNMENT + OAGWBG_BUDGETREQUEST WHERE BudgetRequestId=id AND BudgetStatus="C" AND IS_APPROVE=1 — ต้องใช้ตารางโดยตรง (ไม่ใช่ View เพราะ View ไม่มี IS_APPROVE) |
+| **`GetBudgetGovernmentByRequestId(int id)`** | Query OAGWBG_V_BUDGETGOVERNMENT WHERE BudgetRequestId=id AND BudgetStatus="C" AND IS_APPROVE=1 — ใช้ View ได้โดยตรง (IS_APPROVE จะถูกเพิ่มใน View ใน prerequisite task) |
 | `SaveBudgetAllocateTransferMoreDetail()` | บันทึก OAGWBG_BUDGETALLOCATETRANSFERMORE (Header) + OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY (Ref=BudgetGovernment.Id) + OAGWBG_BUDGETRECEIVE |
 | `ConfirmBudgetAllocateTransferMore()` | Reuse/extract logic จาก ConfirmBudgetAllocateTransfer (line 15391) |
 
@@ -407,11 +412,18 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | R-5 | การสร้าง BudgetReceive ต้นทางใหม่ยอด 0 อาจกระทบ balance รายงาน | สูง | ตรวจสอบ balance calculation logic ก่อน |
 | R-6 | ยังไม่มี "ยืนยันรายการ" ที่หน้าขอรับจัดสรรเพิ่มเติม | สูง | ชั่วคราวใช้ Filter ระดับ Header (StatusId=20101) แทน หรือพัฒนาส่วนนี้ก่อน |
 | R-7 | 1:N — ใบโอนเดียวมีหลายคำขอ → รายการใน OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY อาจปะปนกัน | กลาง | แสดง UI แยกกลุ่มตามคำขอ, ใช้ `Ref` → `BudgetGovernment.BudgetRequestId` แยกกลุ่มได้ |
-| R-8 | `IS_APPROVE` ไม่มีใน `OAGWBG_V_BUDGETGOVERNMENT` และ `OAGWBG_V_BUDGETREQUEST` — View ทั้งสองไม่ได้ expose field นี้ | กลาง | `GetBudgetGovernmentByRequestId()` ต้อง query ตารางโดยตรงด้วย EF Core JOIN: `_context.OagwbgBudgetgovernments.Join(_context.OagwbgBudgetrequests, ...)` แทนการใช้ View |
+| R-8 | `IS_APPROVE` จะย้ายจาก Header (`OAGWBG_BUDGETREQUEST`) → item-level (`OAGWBG_V_BUDGETGOVERNMENT`) ก่อน feature นี้เริ่ม — ถ้า prerequisite ยังไม่เสร็จ feature นี้พัฒนาไม่ได้ | สูง | ต้องรอ prerequisite (เพิ่ม IS_APPROVE ใน OAGWBG_V_BUDGETGOVERNMENT + นำออกจาก BUDGETREQUEST) ให้เสร็จก่อน Phase 2 |
 
 ---
 
 ## 12. ลำดับการพัฒนา (Development Phases)
+
+### Phase 0 — Prerequisite (ทำก่อน — ไม่ใช่งานของ Feature นี้)
+> งานนี้จะดำเนินการก่อน BudgetAllocateTransferMore ทั้งหมดอยู่แล้ว
+1. เพิ่ม `IS_APPROVE` column ใน `OAGWBG_BUDGETGOVERNMENT` (item-level approval)
+2. อัปเดต View `OAGWBG_V_BUDGETGOVERNMENT` ให้ expose `IS_APPROVE`
+3. นำ `IS_APPROVE` ออกจาก `OAGWBG_BUDGETREQUEST` (Header)
+4. อัปเดต `OagwbgBudgetrequest.cs` และ `OagwbgVBudgetrequest.cs` ให้ตรงกัน
 
 ### Phase 1 — DB + DAL
 1. รัน DDL สร้างตารางใหม่:
@@ -428,10 +440,11 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 4. Register Models ใน `OagwbgContext.cs`
 
 ### Phase 2 — Backend Service + API
+> ⚠️ ต้อง Phase 0 เสร็จก่อน (เพื่อให้ `OAGWBG_V_BUDGETGOVERNMENT.IS_APPROVE` ใช้ได้)
 1. `GetBudgetRequestMoreForTransfer()` — Query คำขอสถานะ 20101
-2. `GetBudgetGovernmentByRequestId()` — Query รายการในคำขอ
+2. `GetBudgetGovernmentByRequestId()` — Query `OAGWBG_V_BUDGETGOVERNMENT` WHERE BudgetStatus="C" AND IS_APPROVE=1
 3. Extract private method จาก `ConfirmBudgetAllocateTransfer` (line 15391)
-4. `SaveBudgetAllocateTransferMoreDetail()` — Header (TRANSFERTYPE='MORE') + Category + BudgetReceive
+4. `SaveBudgetAllocateTransferMoreDetail()` — Header + Category + BudgetReceive
 5. `ConfirmBudgetAllocateTransferMore()` — เรียก extracted private method
 6. เพิ่ม endpoints ใน API Controller
 
