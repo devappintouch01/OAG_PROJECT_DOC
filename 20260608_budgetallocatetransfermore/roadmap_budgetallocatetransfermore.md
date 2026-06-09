@@ -459,3 +459,1527 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 2. ตรวจสอบ balance ใน OAGWBG_BUDGETRECEIVE หลังยืนยัน
 3. Edge case: ไม่พบ BudgetReceive ต้นทาง → สร้างใหม่ยอด 0
 4. Edge case: ใบโอนเดียวดึงจาก 2+ คำขอ
+
+---
+
+## 13. SQL Scripts
+
+> **หมายเหตุ:** Section 6 DDL stub มี `STATUSID NUMBER` — section นี้ใช้ `TRANSFERSTATUS VARCHAR2(10)` ให้ตรงกับตารางเดิม `OAGWBG_BUDGETALLOCATETRANSFER`
+
+### 13.1 Phase 0 — Prerequisite (ไม่ใช่งานของ Feature นี้)
+
+```sql
+-- เพิ่ม IS_APPROVE ระดับ item ใน OAGWBG_BUDGETGOVERNMENT
+ALTER TABLE OAGWBG.OAGWBG_BUDGETGOVERNMENT
+    ADD IS_APPROVE NUMBER(1) DEFAULT 0;
+
+COMMENT ON COLUMN OAGWBG.OAGWBG_BUDGETGOVERNMENT.IS_APPROVE
+    IS 'ระบุว่าให้งบประมาณหรือไม่ (0=ยังไม่อนุมัติ, 1=อนุมัติ)';
+
+-- อัปเดต OAGWBG_V_BUDGETGOVERNMENT ให้ expose IS_APPROVE
+-- (DBA ต้องดู DDL ของ View เดิมแล้วเพิ่ม column นี้)
+CREATE OR REPLACE VIEW OAGWBG.OAGWBG_V_BUDGETGOVERNMENT AS
+    SELECT g.*, g.IS_APPROVE
+    -- ... (เพิ่ม IS_APPROVE เข้าไปใน SELECT ของ View เดิม)
+    FROM OAGWBG.OAGWBG_BUDGETGOVERNMENT g
+    -- ... (JOIN เดิมทั้งหมด)
+;
+
+-- นำ IS_APPROVE ออกจาก OAGWBG_BUDGETREQUEST
+ALTER TABLE OAGWBG.OAGWBG_BUDGETREQUEST
+    DROP COLUMN IS_APPROVE;
+```
+
+### 13.2 Phase 1 — New Tables
+
+```sql
+-- ─────────────────────────────────────────────────────────────────
+-- 1. Header table
+-- ─────────────────────────────────────────────────────────────────
+CREATE TABLE OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE (
+    ID                NUMBER(10)    NOT NULL,
+    BOOKNO            VARCHAR2(200),
+    BOOKDATE          VARCHAR2(255),
+    BANKACCOUNTID     NUMBER(15),
+    TRANSFERDATE      TIMESTAMP(6),
+    REGIONID          VARCHAR2(250),
+    TOTALRECEIVEAMOUNT NUMBER(38,2),
+    TRANSFERSTATUS    VARCHAR2(10),
+    RUNNING           NUMBER(10),
+    ROUNDNO           NUMBER(10),
+    CREATEBY          NUMBER(10)    DEFAULT -1,
+    CREATEON          TIMESTAMP(6)  DEFAULT SYSTIMESTAMP,
+    UPDATEBY          NUMBER(10),
+    UPDATEON          TIMESTAMP(6),
+    BUDGETYEAR        NUMBER(10),
+    TRANSFERORGTYPE   VARCHAR2(255),
+    BUDGETSOURCEID    VARCHAR2(255),
+    CONSTRAINT PK_BUDGETALLOCATETRANSFERMORE PRIMARY KEY (ID)
+);
+COMMENT ON TABLE OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE
+    IS 'ใบโอนจัดสรรเพิ่มเติม';
+
+CREATE SEQUENCE OAGWBG.SEQ_BUDGETALLOCATETRANSFERMORE
+    START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+
+-- ─────────────────────────────────────────────────────────────────
+-- 2. Category table
+-- ─────────────────────────────────────────────────────────────────
+CREATE TABLE OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY (
+    ID                           NUMBER(10)   NOT NULL,
+    CREATEBY                     NUMBER(10)   DEFAULT -1,
+    CREATEON                     TIMESTAMP(6) DEFAULT SYSTIMESTAMP,
+    UPDATEBY                     NUMBER(10),
+    UPDATEON                     TIMESTAMP(6),
+    TRANSFERSTATUS               VARCHAR2(10),
+    BUDGETALLOCATETRANSFERMOREID NUMBER(10)   NOT NULL,
+    CATEGORYID                   NUMBER(10),
+    TOTALRECEIVEAMOUNT           NUMBER(38,2),
+    TOTALALLOCATEAMOUNT          NUMBER(38,2),
+    BUDGETYEAR                   NUMBER(10),
+    BUDGETPLANID                 VARCHAR2(150),
+    BUDGETTYPEID                 VARCHAR2(150),
+    PRODUCTID                    VARCHAR2(150),
+    ACTIVITYID                   VARCHAR2(150),
+    SUMMARYACCOUNTCODE           VARCHAR2(255),
+    BUDGETSOURCEID               VARCHAR2(3),
+    BUDGETCODEID                 VARCHAR2(20),
+    REF                          NUMBER(10),
+    COSTCENTERID                 VARCHAR2(20),
+    DEPARTMENTID                 VARCHAR2(20),
+    CONSTRAINT PK_BUDGETALLOCATETRANSFERMORE_CAT PRIMARY KEY (ID),
+    CONSTRAINT FK_BATM_CAT_HEADER
+        FOREIGN KEY (BUDGETALLOCATETRANSFERMOREID)
+        REFERENCES OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE(ID)
+);
+COMMENT ON TABLE OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY
+    IS 'รายการโอนออก (ต้นทาง) ของใบโอนจัดสรรเพิ่มเติม';
+COMMENT ON COLUMN OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY.REF
+    IS 'FK → OAGWBG_BUDGETGOVERNMENT.ID — รายการจากคำขอที่โอน';
+
+CREATE SEQUENCE OAGWBG.SEQ_BUDGETALLOCATETRANSFERMORE_CAT
+    START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+```
+
+### 13.3 Phase 1 — New Views
+
+> DBA สร้างโดย mirror DDL จาก View เดิม แล้วเปลี่ยนชื่อตาราง/FK ให้ชี้มาที่ตารางใหม่
+
+```sql
+-- View ของ Header
+CREATE OR REPLACE VIEW OAGWBG.OAGWBG_V_BUDGETALLOCATETRANSFERMORE AS
+    SELECT
+        h.ID, h.BOOKNO, h.BOOKDATE, h.BANKACCOUNTID,
+        h.TRANSFERDATE, h.REGIONID, h.TOTALRECEIVEAMOUNT,
+        h.TRANSFERSTATUS,
+        ms.STATUSNAME AS TRANSFERSTATUSNAME,
+        h.RUNNING, h.ROUNDNO,
+        h.CREATEBY, h.CREATEON, h.UPDATEBY, h.UPDATEON,
+        h.BUDGETYEAR, h.TRANSFERORGTYPE, h.BUDGETSOURCEID
+    FROM OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE h
+    LEFT JOIN OAGWBG.OAGWBG_MASTERSTATUS ms
+        ON h.TRANSFERSTATUS = ms.ID;
+
+-- View ของ Category
+CREATE OR REPLACE VIEW OAGWBG.OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY AS
+    SELECT
+        c.ID, c.CREATEBY, c.CREATEON, c.UPDATEBY, c.UPDATEON,
+        c.TRANSFERSTATUS,
+        c.BUDGETALLOCATETRANSFERMOREID,
+        c.CATEGORYID,
+        mc.CATEGORYNAME,
+        c.PRODUCTID,
+        c.ACTIVITYID,
+        c.BUDGETPLANID,
+        c.BUDGETTYPEID,
+        c.TOTALRECEIVEAMOUNT, c.TOTALALLOCATEAMOUNT,
+        c.BUDGETYEAR, c.REGIONID,
+        c.SUMMARYACCOUNTCODE,
+        c.BUDGETSOURCEID,
+        c.BUDGETCODEID,
+        c.REF,
+        c.COSTCENTERID, c.DEPARTMENTID,
+        h.ROUNDNO AS CODE
+    FROM OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY c
+    LEFT JOIN OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE h
+        ON c.BUDGETALLOCATETRANSFERMOREID = h.ID
+    LEFT JOIN OAGWBG.OAGWBG_MASTERCATEGORY mc
+        ON c.CATEGORYID = mc.ID;
+```
+
+---
+
+## 14. DAL Models — ไฟล์ใหม่
+
+### 📄 [สร้างใหม่] `OAGBudget.DAL\Models\OagwbgBudgetallocatetransfermore.cs`
+
+```csharp
+namespace OAGBudget.DAL.Models;
+
+public partial class OagwbgBudgetallocatetransfermore
+{
+    public int Id { get; set; }
+    public string? Bookno { get; set; }
+    public string? Bookdate { get; set; }
+    public long? Bankaccountid { get; set; }
+    public DateTime? Transferdate { get; set; }
+    public string? Regionid { get; set; }
+    public decimal? Totalreceiveamount { get; set; }
+    public string? Transferstatus { get; set; }
+    public int? Running { get; set; }
+    public int? Roundno { get; set; }
+    public int? Createby { get; set; }
+    public DateTime? Createon { get; set; }
+    public int? Updateby { get; set; }
+    public DateTime? Updateon { get; set; }
+    public int? Budgetyear { get; set; }
+    public string? Transferorgtype { get; set; }
+    public string? Budgetsourceid { get; set; }
+}
+```
+
+### 📄 [สร้างใหม่] `OAGBudget.DAL\Models\OagwbgBudgetallocatetransfermorecategory.cs`
+
+```csharp
+namespace OAGBudget.DAL.Models;
+
+public partial class OagwbgBudgetallocatetransfermorecategory
+{
+    public int Id { get; set; }
+    public int? Createby { get; set; }
+    public DateTime? Createon { get; set; }
+    public int? Updateby { get; set; }
+    public DateTime? Updateon { get; set; }
+    public string? Transferstatus { get; set; }
+    public int? Budgetallocatetransfermoreid { get; set; }
+    public int? Categoryid { get; set; }
+    public decimal? Totalreceiveamount { get; set; }
+    public decimal? Totalallocateamount { get; set; }
+    public int? Budgetyear { get; set; }
+    public string? Budgetplanid { get; set; }
+    public string? Budgettypeid { get; set; }
+    public string? Productid { get; set; }
+    public string? Activityid { get; set; }
+    public string? SummaryAccountCode { get; set; }
+    public string? BudgetSourceId { get; set; }
+    public string? BudgetCodeId { get; set; }
+    public int? Ref { get; set; }
+    public string? CostCenterId { get; set; }
+    public string? DepartmentId { get; set; }
+}
+```
+
+### 📄 [สร้างใหม่] `OAGBudget.DAL\Models\OagwbgVBudgetallocatetransfermore.cs`
+
+```csharp
+namespace OAGBudget.DAL.Models;
+
+public partial class OagwbgVBudgetallocatetransfermore
+{
+    public int Id { get; set; }
+    public string? Bookno { get; set; }
+    public string? Bookdate { get; set; }
+    public long? Bankaccountid { get; set; }
+    public DateTime? Transferdate { get; set; }
+    public string? Regionid { get; set; }
+    public decimal? Totalreceiveamount { get; set; }
+    public string? Transferstatus { get; set; }
+    public string? Transferstatusname { get; set; }
+    public int? Running { get; set; }
+    public int? Roundno { get; set; }
+    public int? Createby { get; set; }
+    public DateTime? Createon { get; set; }
+    public int? Updateby { get; set; }
+    public DateTime? Updateon { get; set; }
+    public int? Budgetyear { get; set; }
+    public string? Transferorgtype { get; set; }
+    public string? Budgetsourceid { get; set; }
+}
+```
+
+### 📄 [สร้างใหม่] `OAGBudget.DAL\Models\OagwbgVBudgetallocatetransfermorecategory.cs`
+
+```csharp
+namespace OAGBudget.DAL.Models;
+
+public partial class OagwbgVBudgetallocatetransfermorecategory
+{
+    public int Id { get; set; }
+    public int? Createby { get; set; }
+    public DateTime? Createon { get; set; }
+    public int? Updateby { get; set; }
+    public DateTime? Updateon { get; set; }
+    public string? Transferstatus { get; set; }
+    public int? Budgetallocatetransfermoreid { get; set; }
+    public int? Budgetplanid { get; set; }
+    public string? Budgetplanname { get; set; }
+    public int? Budgettypeid { get; set; }
+    public string? Budgettypename { get; set; }
+    public int? Categoryid { get; set; }
+    public string? Categoryname { get; set; }
+    public string? Productid { get; set; }
+    public string? Productname { get; set; }
+    public string? Activityid { get; set; }
+    public string? Activityname { get; set; }
+    public decimal? Totalreceiveamount { get; set; }
+    public decimal? Totalallocateamount { get; set; }
+    public int? Budgetyear { get; set; }
+    public string? Regionid { get; set; }
+    public string? SummaryAccountCode { get; set; }
+    public string? BudgetSourceId { get; set; }
+    public string? Budgetcodeid { get; set; }
+    public int? Ref { get; set; }
+    public string? CostCenterId { get; set; }
+    public string? DepartmentId { get; set; }
+    public string? Code { get; set; }
+}
+```
+
+### 📄 [แก้ไข] `OAGBudget.DAL\Models\MOENDBContextBase.cs`
+
+เพิ่ม DbSet ใน class body (ต่อจากบรรทัด `OagwbgBudgetallocatetransferCostcenterNotes`):
+
+```csharp
+public virtual DbSet<OagwbgBudgetallocatetransfermore> OagwbgBudgetallocatetransfezmores { get; set; }
+public virtual DbSet<OagwbgBudgetallocatetransfermorecategory> OagwbgBudgetallocatetransfermoreCategories { get; set; }
+public virtual DbSet<OagwbgVBudgetallocatetransfermore> OagwbgVBudgetallocatetransfermores { get; set; }
+public virtual DbSet<OagwbgVBudgetallocatetransfermorecategory> OagwbgVBudgetallocatetransfermoreCategories { get; set; }
+```
+
+เพิ่ม entity config ใน `OnModelCreating` (ต่อจาก config ของ `OagwbgBudgetallocatetransferCostcenter`):
+
+```csharp
+modelBuilder.Entity<OagwbgBudgetallocatetransfermore>(entity =>
+{
+    entity.HasKey(e => e.Id).HasName("PK_BUDGETALLOCATETRANSFERMORE");
+    entity.ToTable("OAGWBG_BUDGETALLOCATETRANSFERMORE");
+    entity.Property(e => e.Id).HasPrecision(10).HasColumnName("ID");
+    entity.Property(e => e.Bookno).HasMaxLength(200).IsUnicode(false).HasColumnName("BOOKNO");
+    entity.Property(e => e.Bookdate).HasMaxLength(255).IsUnicode(false).HasColumnName("BOOKDATE");
+    entity.Property(e => e.Bankaccountid).HasPrecision(15).HasColumnName("BANKACCOUNTID");
+    entity.Property(e => e.Transferdate).HasPrecision(6).HasColumnName("TRANSFERDATE");
+    entity.Property(e => e.Regionid).HasMaxLength(250).IsUnicode(false).HasColumnName("REGIONID");
+    entity.Property(e => e.Totalreceiveamount).HasColumnType("NUMBER(38,2)").HasColumnName("TOTALRECEIVEAMOUNT");
+    entity.Property(e => e.Transferstatus).HasMaxLength(10).IsUnicode(false).HasColumnName("TRANSFERSTATUS");
+    entity.Property(e => e.Running).HasPrecision(10).HasColumnName("RUNNING");
+    entity.Property(e => e.Roundno).HasPrecision(10).HasColumnName("ROUNDNO");
+    entity.Property(e => e.Createby).HasPrecision(10).HasDefaultValueSql("-1").HasColumnName("CREATEBY");
+    entity.Property(e => e.Createon).HasPrecision(6).HasDefaultValueSql("SYSTIMESTAMP").HasColumnName("CREATEON");
+    entity.Property(e => e.Updateby).HasPrecision(10).HasColumnName("UPDATEBY");
+    entity.Property(e => e.Updateon).HasPrecision(6).HasColumnName("UPDATEON");
+    entity.Property(e => e.Budgetyear).HasPrecision(10).HasColumnName("BUDGETYEAR");
+    entity.Property(e => e.Transferorgtype).HasMaxLength(255).IsUnicode(false).HasColumnName("TRANSFERORGTYPE");
+    entity.Property(e => e.Budgetsourceid).HasMaxLength(255).IsUnicode(false).HasColumnName("BUDGETSOURCEID");
+});
+
+modelBuilder.Entity<OagwbgBudgetallocatetransfermorecategory>(entity =>
+{
+    entity.HasKey(e => e.Id).HasName("PK_BUDGETALLOCATETRANSFERMORE_CAT");
+    entity.ToTable("OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY");
+    entity.Property(e => e.Id).HasPrecision(10).HasColumnName("ID");
+    entity.Property(e => e.Createby).HasPrecision(10).HasDefaultValueSql("-1").HasColumnName("CREATEBY");
+    entity.Property(e => e.Createon).HasPrecision(6).HasDefaultValueSql("SYSTIMESTAMP").HasColumnName("CREATEON");
+    entity.Property(e => e.Updateby).HasPrecision(10).HasColumnName("UPDATEBY");
+    entity.Property(e => e.Updateon).HasPrecision(6).HasColumnName("UPDATEON");
+    entity.Property(e => e.Transferstatus).HasMaxLength(10).IsUnicode(false).HasColumnName("TRANSFERSTATUS");
+    entity.Property(e => e.Budgetallocatetransfermoreid).HasPrecision(10).HasColumnName("BUDGETALLOCATETRANSFERMOREID");
+    entity.Property(e => e.Categoryid).HasPrecision(10).HasColumnName("CATEGORYID");
+    entity.Property(e => e.Totalreceiveamount).HasColumnType("NUMBER(38,2)").HasColumnName("TOTALRECEIVEAMOUNT");
+    entity.Property(e => e.Totalallocateamount).HasColumnType("NUMBER(38,2)").HasColumnName("TOTALALLOCATEAMOUNT");
+    entity.Property(e => e.Budgetyear).HasPrecision(10).HasColumnName("BUDGETYEAR");
+    entity.Property(e => e.Budgetplanid).HasMaxLength(150).IsUnicode(false).HasColumnName("BUDGETPLANID");
+    entity.Property(e => e.Budgettypeid).HasMaxLength(150).IsUnicode(false).HasColumnName("BUDGETTYPEID");
+    entity.Property(e => e.Productid).HasMaxLength(150).IsUnicode(false).HasColumnName("PRODUCTID");
+    entity.Property(e => e.Activityid).HasMaxLength(150).IsUnicode(false).HasColumnName("ACTIVITYID");
+    entity.Property(e => e.SummaryAccountCode).HasMaxLength(255).IsUnicode(false).HasColumnName("SUMMARYACCOUNTCODE");
+    entity.Property(e => e.BudgetSourceId).HasMaxLength(3).IsUnicode(false).HasColumnName("BUDGETSOURCEID");
+    entity.Property(e => e.BudgetCodeId).HasMaxLength(20).IsUnicode(false).HasColumnName("BUDGETCODEID");
+    entity.Property(e => e.Ref).HasPrecision(10).HasColumnName("REF");
+    entity.Property(e => e.CostCenterId).HasMaxLength(20).IsUnicode(false).IsRequired(false).HasColumnName("COSTCENTERID");
+    entity.Property(e => e.DepartmentId).HasMaxLength(20).IsUnicode(false).IsRequired(false).HasColumnName("DEPARTMENTID");
+});
+
+modelBuilder.Entity<OagwbgVBudgetallocatetransfermore>(entity =>
+{
+    entity.HasNoKey();
+    entity.ToView("OAGWBG_V_BUDGETALLOCATETRANSFERMORE");
+    entity.Property(e => e.Id).HasPrecision(10).HasColumnName("ID");
+    entity.Property(e => e.Transferstatus).HasMaxLength(10).IsUnicode(false).HasColumnName("TRANSFERSTATUS");
+    entity.Property(e => e.Transferstatusname).HasMaxLength(255).IsUnicode(false).HasColumnName("TRANSFERSTATUSNAME");
+    entity.Property(e => e.Roundno).HasPrecision(10).HasColumnName("ROUNDNO");
+    entity.Property(e => e.Running).HasPrecision(10).HasColumnName("RUNNING");
+    entity.Property(e => e.Transferdate).HasPrecision(6).HasColumnName("TRANSFERDATE");
+    entity.Property(e => e.Regionid).HasMaxLength(250).IsUnicode(false).HasColumnName("REGIONID");
+    entity.Property(e => e.Totalreceiveamount).HasColumnType("NUMBER(38,2)").HasColumnName("TOTALRECEIVEAMOUNT");
+    entity.Property(e => e.Budgetyear).HasPrecision(10).HasColumnName("BUDGETYEAR");
+    entity.Property(e => e.Transferorgtype).HasMaxLength(255).IsUnicode(false).HasColumnName("TRANSFERORGTYPE");
+    entity.Property(e => e.Budgetsourceid).HasMaxLength(255).IsUnicode(false).HasColumnName("BUDGETSOURCEID");
+    entity.Property(e => e.Createby).HasPrecision(10).HasColumnName("CREATEBY");
+    entity.Property(e => e.Createon).HasPrecision(6).HasColumnName("CREATEON");
+    entity.Property(e => e.Updateby).HasPrecision(10).HasColumnName("UPDATEBY");
+    entity.Property(e => e.Updateon).HasPrecision(6).HasColumnName("UPDATEON");
+});
+
+modelBuilder.Entity<OagwbgVBudgetallocatetransfermorecategory>(entity =>
+{
+    entity.HasNoKey();
+    entity.ToView("OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY");
+    entity.Property(e => e.Id).HasPrecision(10).HasColumnName("ID");
+    entity.Property(e => e.Transferstatus).HasMaxLength(10).IsUnicode(false).HasColumnName("TRANSFERSTATUS");
+    entity.Property(e => e.Budgetallocatetransfermoreid).HasPrecision(10).HasColumnName("BUDGETALLOCATETRANSFERMOREID");
+    entity.Property(e => e.Categoryid).HasPrecision(10).HasColumnName("CATEGORYID");
+    entity.Property(e => e.Categoryname).HasMaxLength(255).IsUnicode(false).HasColumnName("CATEGORYNAME");
+    entity.Property(e => e.Productid).HasMaxLength(150).IsUnicode(false).HasColumnName("PRODUCTID");
+    entity.Property(e => e.Productname).HasMaxLength(255).IsUnicode(false).HasColumnName("PRODUCTNAME");
+    entity.Property(e => e.Activityid).HasMaxLength(150).IsUnicode(false).HasColumnName("ACTIVITYID");
+    entity.Property(e => e.Activityname).HasMaxLength(255).IsUnicode(false).HasColumnName("ACTIVITYNAME");
+    entity.Property(e => e.Totalreceiveamount).HasColumnType("NUMBER(38,2)").HasColumnName("TOTALRECEIVEAMOUNT");
+    entity.Property(e => e.Totalallocateamount).HasColumnType("NUMBER(38,2)").HasColumnName("TOTALALLOCATEAMOUNT");
+    entity.Property(e => e.Budgetyear).HasPrecision(10).HasColumnName("BUDGETYEAR");
+    entity.Property(e => e.BudgetSourceId).HasMaxLength(3).IsUnicode(false).HasColumnName("BUDGETSOURCEID");
+    entity.Property(e => e.Budgetcodeid).HasMaxLength(20).IsUnicode(false).HasColumnName("BUDGETCODEID");
+    entity.Property(e => e.Ref).HasPrecision(10).HasColumnName("REF");
+    entity.Property(e => e.CostCenterId).HasMaxLength(20).IsUnicode(false).HasColumnName("COSTCENTERID");
+    entity.Property(e => e.DepartmentId).HasMaxLength(20).IsUnicode(false).HasColumnName("DEPARTMENTID");
+    entity.Property(e => e.Code).HasMaxLength(50).IsUnicode(false).HasColumnName("CODE");
+});
+```
+
+---
+
+## 15. Application Models — ไฟล์ใหม่
+
+### 📄 [สร้างใหม่] `OAGBudget.Models\Search\SearchBudgetAllocateTransferMoreList.cs`
+
+```csharp
+namespace OAGBudget.Models.Search
+{
+    public class SearchBudgetAllocateTransferMoreList : CriteriaBase
+    {
+        public int? Roundno { get; set; }
+        public string? Regionid { get; set; }
+        public DateTime? TransferDate { get; set; }
+        public int? Budgetyear { get; set; }
+        public string? Transferorgtype { get; set; }
+        public string? StatusId { get; set; }
+    }
+}
+```
+
+### 📄 [สร้างใหม่] `OAGBudget.Models\Data\BudgetAllocateTransferMoreDetailModel.cs`
+
+```csharp
+using OAGBudget.DAL.Models;
+
+namespace OAGBudget.Models.Data
+{
+    public class BudgetAllocateTransferMoreDetailModel
+    {
+        public OagwbgBudgetallocatetransfermore? BudgetAllocateTransferMore { get; set; }
+        public List<OagwbgBudgetallocatetransfermorecategory> CategoryList { get; set; } = new();
+    }
+}
+```
+
+### 📄 [สร้างใหม่] `OAGBudget.Models\Data\BudgetAllocateTransferMoreItemModel.cs`
+
+> ใช้ส่งจาก UI เมื่อ user เลือกรายการจากคำขอและระบุแหล่งเงินโอนออก
+
+```csharp
+namespace OAGBudget.Models.Data
+{
+    public class BudgetAllocateTransferMoreItemModel
+    {
+        // จากคำขอ (BudgetGovernment)
+        public int BudgetGovernmentId { get; set; }       // → Category.Ref
+        public int BudgetRequestId { get; set; }
+        public int? Categoryid { get; set; }
+        public string? Budgetplanid { get; set; }
+        public string? Productid { get; set; }
+        public string? Activityid { get; set; }
+        public string? Budgetcode { get; set; }
+        public decimal? Totalrequestamount { get; set; }
+
+        // ฝั่งโอนออก (user เลือก)
+        public string? BudgetSourceId { get; set; }
+        public string? DepartmentId { get; set; }         // null เมื่อ Source=100 (fixed)
+        public string? CostCenterId { get; set; }         // null เมื่อ Source=100 (fixed)
+        public decimal? Totaltransferamount { get; set; }
+
+        // flag
+        public bool IsSource100 { get; set; }             // true = auto-fill จาก Source=100
+    }
+}
+```
+
+### 📄 [สร้างใหม่] `OAGBudget.Models\ViewModel\BudgetAllocateTransferMoreDetailViewModel.cs`
+
+```csharp
+using OAGBudget.DAL.Models;
+
+namespace OAGBudget.Models.ViewModel
+{
+    public class BudgetAllocateTransferMoreDetailViewModel
+    {
+        public OagwbgVBudgetallocatetransfermore Detail { get; set; } = new();
+        public List<OagwbgVBudgetallocatetransfermorecategory> Items { get; set; } = new();
+    }
+}
+```
+
+---
+
+## 16. Service Interface — แก้ไข `BudgetService.cs` (interface region)
+
+เพิ่มต่อจาก BudgetTransfer region (ประมาณบรรทัด 167):
+
+```csharp
+#region BudgetAllocateTransferMore
+Task<SearchResult<OagwbgVBudgetallocatetransfermore>> GetBudgetAllocateTransferMoreList(SearchBudgetAllocateTransferMoreList data);
+Task<BudgetAllocateTransferMoreDetailViewModel> GetBudgetAllocateTransferMoreDetail(int id);
+Task<List<OagwbgVBudgetrequest>> GetBudgetRequestMoreForTransfer(int? budgetyear);
+Task<List<OagwbgVBudgetgovernment>> GetBudgetGovernmentByRequestId(int requestId);
+Task<int> SaveBudgetAllocateTransferMoreDetail(BudgetAllocateTransferMoreDetailModel data);
+Task<ApiResultsModel> ConfirmBudgetAllocateTransferMore(int? id);
+Task<int> ChangeStatusBudgetAllocateTransferMore(int id, string statusId);
+Task<ApiResultsModel> DeleteBudgetAllocateTransferMore(int id);
+#endregion
+```
+
+---
+
+## 17. Service Methods — แก้ไข `BudgetService.cs`
+
+เพิ่ม region ใหม่ต่อจาก `#endregion` ของ BudgetAllocateTransfer (หลังบรรทัดสุดท้ายของ region นั้น):
+
+```csharp
+#region BudgetAllocateTransferMore
+
+public async Task<SearchResult<OagwbgVBudgetallocatetransfermore>> GetBudgetAllocateTransferMoreList(
+    SearchBudgetAllocateTransferMoreList data)
+{
+    try
+    {
+        var result = new SearchResult<OagwbgVBudgetallocatetransfermore>();
+        var query = _context.OagwbgVBudgetallocatetransfermores.AsNoTracking().AsQueryable();
+
+        if (data.Roundno.HasValue && data.Roundno.Value != 0)
+            query = query.Where(x => x.Roundno == data.Roundno);
+
+        if (data.TransferDate.HasValue)
+        {
+            var d = data.TransferDate.Value;
+            if (d.Year > 2400) d = d.AddYears(-543);
+            query = query.Where(x => x.Transferdate >= d.Date && x.Transferdate < d.Date.AddDays(1));
+        }
+
+        if (!string.IsNullOrWhiteSpace(data.Regionid) && data.Regionid != "99")
+            query = query.Where(x => x.Regionid == data.Regionid);
+
+        if (data.Budgetyear.HasValue && data.Budgetyear.Value != 0)
+            query = query.Where(x => x.Budgetyear == data.Budgetyear);
+
+        if (!string.IsNullOrWhiteSpace(data.Transferorgtype))
+            query = query.Where(x => x.Transferorgtype == data.Transferorgtype);
+
+        if (!string.IsNullOrWhiteSpace(data.StatusId))
+            query = query.Where(x => x.Transferstatus == data.StatusId);
+
+        result.ItemCount = await query.CountAsync();
+        result.ResultData = await query
+            .OrderBy(x => x.Roundno).ThenBy(x => x.Transferdate)
+            .Skip(data.Skip).Take(data.Take)
+            .ToListAsync();
+
+        return result;
+    }
+    catch (Exception) { throw; }
+}
+
+public async Task<BudgetAllocateTransferMoreDetailViewModel> GetBudgetAllocateTransferMoreDetail(int id)
+{
+    try
+    {
+        var vm = new BudgetAllocateTransferMoreDetailViewModel();
+        vm.Detail = await _context.OagwbgVBudgetallocatetransfermores
+            .AsNoTracking().FirstOrDefaultAsync(x => x.Id == id)
+            ?? new OagwbgVBudgetallocatetransfermore();
+        vm.Items = await _context.OagwbgVBudgetallocatetransfermoreCategories
+            .AsNoTracking().Where(x => x.Budgetallocatetransfermoreid == id).ToListAsync();
+        return vm;
+    }
+    catch (Exception) { throw; }
+}
+
+public async Task<List<OagwbgVBudgetrequest>> GetBudgetRequestMoreForTransfer(int? budgetyear)
+{
+    // prerequisite: OAGWBG_V_BUDGETREQUEST ต้องไม่มี IS_APPROVE แล้ว
+    var query = _context.OagwbgVBudgetrequests
+        .AsNoTracking()
+        .Where(x => x.Budgetformtypeid == 3
+                 && x.IS_COSTCENTER == 1
+                 && x.Statusid == 20101
+                 && x.Rn == null);
+
+    if (budgetyear.HasValue && budgetyear.Value != 0)
+        query = query.Where(x => x.Budgetyear == budgetyear);
+
+    return await query.OrderBy(x => x.Code).ToListAsync();
+}
+
+public async Task<List<OagwbgVBudgetgovernment>> GetBudgetGovernmentByRequestId(int requestId)
+{
+    // prerequisite: OAGWBG_V_BUDGETGOVERNMENT ต้องมี IS_APPROVE แล้ว
+    return await _context.OagwbgVBudgetgovernments
+        .AsNoTracking()
+        .Where(x => x.Budgetrequestid == requestId
+                 && x.Budgetstatus == "C"
+                 && x.IS_APPROVE == 1)    // IS_APPROVE เพิ่งถูก expose ใน View (prerequisite)
+        .ToListAsync();
+}
+
+public async Task<int> SaveBudgetAllocateTransferMoreDetail(BudgetAllocateTransferMoreDetailModel data)
+{
+    try
+    {
+        var userInfo = await _auth.ValidateTokenAndGetUserInfo();
+        var budgetYear = data.BudgetAllocateTransferMore?.Budgetyear;
+        OagwbgBudgetallocatetransfermore header;
+
+        var existing = data.BudgetAllocateTransferMore?.Id > 0
+            ? await _context.OagwbgBudgetallocatetransfezmores
+                .FirstOrDefaultAsync(x => x.Id == data.BudgetAllocateTransferMore!.Id)
+            : null;
+
+        if (existing != null) // UPDATE
+        {
+            existing.Updateby = userInfo.User.Id;
+            existing.Updateon = DateTime.Now;
+            existing.Bookno = data.BudgetAllocateTransferMore!.Bookno;
+            existing.Bookdate = data.BudgetAllocateTransferMore.Bookdate;
+            existing.Bankaccountid = data.BudgetAllocateTransferMore.Bankaccountid;
+            existing.Totalreceiveamount = data.BudgetAllocateTransferMore.Totalreceiveamount;
+            existing.Transferstatus = data.BudgetAllocateTransferMore.Transferstatus;
+            existing.Transferorgtype = data.BudgetAllocateTransferMore.Transferorgtype;
+            existing.Transferdate = data.BudgetAllocateTransferMore.Transferdate;
+            existing.Regionid = data.BudgetAllocateTransferMore.Regionid;
+            existing.Budgetsourceid = data.BudgetAllocateTransferMore.Budgetsourceid;
+            header = existing;
+        }
+        else // INSERT
+        {
+            var orgType = data.BudgetAllocateTransferMore!.Transferorgtype;
+            // TODO: พิจารณาใช้ sequence แยกสำหรับ More หรือใช้ ResolveRoundNoAsync ร่วมกัน
+            int nextRound = await ResolveRoundNoAsync(budgetYear, orgType)
+                ?? throw new Exception("ไม่สามารถออกเลขโอนได้");
+
+            header = new OagwbgBudgetallocatetransfermore
+            {
+                Createby = userInfo.User.Id,
+                Createon = DateTime.Now,
+                Bookno = data.BudgetAllocateTransferMore.Bookno,
+                Bookdate = data.BudgetAllocateTransferMore.Bookdate,
+                Bankaccountid = data.BudgetAllocateTransferMore.Bankaccountid,
+                Roundno = nextRound,
+                Running = nextRound % 10000,
+                Transferorgtype = orgType,
+                Transferdate = data.BudgetAllocateTransferMore.Transferdate,
+                Regionid = data.BudgetAllocateTransferMore.Regionid,
+                Totalreceiveamount = data.BudgetAllocateTransferMore.Totalreceiveamount,
+                Budgetyear = budgetYear,
+                Transferstatus = data.BudgetAllocateTransferMore.Transferstatus ?? "80101",
+                Budgetsourceid = data.BudgetAllocateTransferMore.Budgetsourceid
+            };
+            _context.OagwbgBudgetallocatetransfezmores.Add(header);
+        }
+
+        await _context.SaveChangesAsync();
+        await SaveBudgetAllocateTransferMoreCategory(header, data.CategoryList);
+        return header.Id;
+    }
+    catch (Exception) { throw; }
+}
+
+private async Task SaveBudgetAllocateTransferMoreCategory(
+    OagwbgBudgetallocatetransfermore header,
+    List<OagwbgBudgetallocatetransfermorecategory> categoryList)
+{
+    var userInfo = await _auth.ValidateTokenAndGetUserInfo();
+    var existing = await _context.OagwbgBudgetallocatetransfermoreCategories
+        .Where(x => x.Budgetallocatetransfermoreid == header.Id).ToListAsync();
+
+    await CollectionHelper.SaveCollectionAsync(
+        source: categoryList ?? new List<OagwbgBudgetallocatetransfermorecategory>(),
+        destination: existing,
+        matchFunc: (s, d) => s.Id != 0 && s.Id == d.Id,
+        addFuncAsync: async (s) =>
+        {
+            var cleanSource = (s.BudgetSourceId == "null" || string.IsNullOrWhiteSpace(s.BudgetSourceId))
+                ? null : s.BudgetSourceId;
+
+            // Source=100: fix dept/costcenter เป็นงบประมาณ
+            var dept = cleanSource == "100" ? "2900600000" : s.DepartmentId;
+            var costcenter = cleanSource == "100" ? "2906999999" : s.CostCenterId;
+
+            var item = new OagwbgBudgetallocatetransfermorecategory
+            {
+                Createby = userInfo.User.Id,
+                Createon = DateTime.Now,
+                Transferstatus = header.Transferstatus,
+                Budgetallocatetransfermoreid = header.Id,
+                Categoryid = s.Categoryid,
+                Productid = s.Productid,
+                Activityid = s.Activityid,
+                Totalreceiveamount = s.Totalreceiveamount,
+                Totalallocateamount = s.Totalallocateamount,
+                Budgetplanid = s.Budgetplanid,
+                Budgettypeid = s.Budgettypeid,
+                Budgetyear = header.Budgetyear,
+                SummaryAccountCode = s.SummaryAccountCode,
+                BudgetSourceId = cleanSource,
+                BudgetCodeId = s.BudgetCodeId,
+                Ref = s.Ref,              // ← BudgetGovernment.Id
+                DepartmentId = dept,
+                CostCenterId = costcenter
+            };
+            _context.OagwbgBudgetallocatetransfermoreCategories.Add(item);
+            await Task.CompletedTask;
+        },
+        updateFuncAsync: async (s, d) =>
+        {
+            var cleanSource = (s.BudgetSourceId == "null" || string.IsNullOrWhiteSpace(s.BudgetSourceId))
+                ? null : s.BudgetSourceId;
+            d.Updateby = userInfo.User.Id;
+            d.Updateon = DateTime.Now;
+            d.Totalreceiveamount = s.Totalreceiveamount;
+            d.Totalallocateamount = s.Totalallocateamount;
+            d.BudgetSourceId = cleanSource;
+            d.DepartmentId = cleanSource == "100" ? "2900600000" : s.DepartmentId;
+            d.CostCenterId = cleanSource == "100" ? "2906999999" : s.CostCenterId;
+            d.BudgetCodeId = s.BudgetCodeId;
+            await Task.CompletedTask;
+        },
+        deleteFuncAsync: async (d) =>
+        {
+            _context.OagwbgBudgetallocatetransfermoreCategories.Remove(d);
+            await Task.CompletedTask;
+        });
+
+    await _context.SaveChangesAsync();
+}
+
+public async Task<ApiResultsModel> ConfirmBudgetAllocateTransferMore(int? id)
+{
+    try
+    {
+        var header = await _context.OagwbgBudgetallocatetransfezmores
+            .FirstOrDefaultAsync(x => x.Id == id);
+        if (header == null)
+            return new ApiResultsModel { Success = false, Message = "ไม่พบข้อมูล", Type = "error" };
+
+        var categories = await _context.OagwbgBudgetallocatetransfermoreCategories
+            .Where(x => x.Budgetallocatetransfermoreid == id).ToListAsync();
+        if (!categories.Any())
+            return new ApiResultsModel { Success = false, Message = "ไม่พบรายการโอนออก", Type = "error" };
+
+        var year = categories.First().Budgetyear;
+        var categoryIds = categories.Select(x => x.Categoryid).ToList();
+        var userInfo = await _auth.ValidateTokenAndGetUserInfo();
+        var userId = userInfo?.User?.Id ?? 0;
+
+        // ดึง BudgetReceive ที่เกี่ยวข้อง (ตรงกับ logic เดิมใน ConfirmBudgetAllocateTransfer)
+        var budgetReceives = await (
+            from br in _context.OagwbgBudgetreceives
+            join rp in _context.OagwbgBudgetreceiveperiods on br.Budgetreceiveperiodid equals rp.Id
+            join g in _context.OagwbgBudgetgovernments on rp.Budgetgovernmentid equals g.Id
+            where categoryIds.Contains(br.Categoryid)
+                && br.Budgetyear == year
+                && br.Departmentid == "2900600000"
+                && br.Costcenterid == "2906999999"
+                && g.Budgetstatus == "C"
+            select br
+        ).ToListAsync();
+
+        var budgetCodeYear = await _context.OagwbgBudgetcodeYears
+            .Where(x => x.Budgetyear == year && categoryIds.Contains(x.Categoryid)).ToListAsync();
+
+        categories.Where(x => x.Totalallocateamount == null).ForEach(x => x.Totalallocateamount = 0);
+
+        if (!isConnection)
+        {
+            header.Transferstatus = "80201";
+            categories.ForEach(x => x.Transferstatus = "80201");
+            header.Updateby = userId;
+            header.Updateon = DateTime.Now;
+            await _context.SaveChangesAsync();
+            return new ApiResultsModel { Success = true, Message = "บันทึกข้อมูลสำเร็จ", Type = "success" };
+        }
+
+        // reuse deduction logic เหมือน ConfirmBudgetAllocateTransfer
+        foreach (var category in categories)
+        {
+            decimal totalAmount = category.Totalallocateamount ?? 0m;
+
+            var query = budgetReceives.Where(x =>
+                x.Categoryid == category.Categoryid &&
+                x.Productid == category.Productid &&
+                x.Activityid == category.Activityid &&
+                x.Budgetsourceid == category.BudgetSourceId);
+
+            if (!string.IsNullOrEmpty(category.DepartmentId))
+                query = query.Where(x => x.Departmentid == category.DepartmentId);
+            if (!string.IsNullOrEmpty(category.CostCenterId))
+                query = query.Where(x => x.Costcenterid == category.CostCenterId);
+
+            var receives = query.OrderByDescending(x => x.Totalbalanceamount ?? 0m).ToList();
+
+            var budgetcode = budgetCodeYear.FirstOrDefault(x =>
+                x.Categoryid == category.Categoryid &&
+                x.Productid.ToString() == category.Productid &&
+                x.Activitycodeid.ToString() == category.Activityid)?.Budgetcodeid;
+
+            if (!receives.Any() || budgetcode == null ||
+                (!string.IsNullOrEmpty(budgetcode) && budgetcode != category.BudgetCodeId))
+            {
+                var newReceive = new OagwbgBudgetreceive
+                {
+                    Departmentid = category.DepartmentId ?? "2900600000",
+                    Costcenterid = category.CostCenterId ?? "2906999999",
+                    Categoryid = category.Categoryid,
+                    Budgetplanid = category.Budgetplanid,
+                    Productid = category.Productid,
+                    Activityid = category.Activityid,
+                    Budgetsourceid = category.BudgetSourceId,
+                    Budgetyear = category.Budgetyear,
+                    Totalallocateamount = 0m,
+                    Totaltransferamount = 0m,
+                    Totalreceiveamount = 0m,
+                    Totalbalanceamount = 0m,
+                    Createby = userId,
+                    Createon = DateTime.Now
+                };
+                _context.OagwbgBudgetreceives.Add(newReceive);
+                budgetReceives.Add(newReceive);
+                receives = new List<OagwbgBudgetreceive> { newReceive };
+            }
+
+            ExecuteBudgetCalculation(receives, totalAmount, userId, isDeduct: true);
+        }
+
+        header.Transferstatus = "80201";
+        categories.ForEach(x => x.Transferstatus = "80201");
+        header.Updateby = userId;
+        header.Updateon = DateTime.Now;
+        await _context.SaveChangesAsync();
+
+        return new ApiResultsModel { Success = true, Message = "ยืนยันสำเร็จ", Type = "success", Data = header };
+    }
+    catch (Exception ex)
+    {
+        return new ApiResultsModel { Success = false, Message = ex.Message, Type = "error" };
+    }
+}
+
+public async Task<int> ChangeStatusBudgetAllocateTransferMore(int id, string statusId)
+{
+    var header = await _context.OagwbgBudgetallocatetransfezmores.FirstOrDefaultAsync(x => x.Id == id);
+    if (header == null) return 0;
+    var userInfo = await _auth.ValidateTokenAndGetUserInfo();
+    header.Transferstatus = statusId;
+    header.Updateby = userInfo.User.Id;
+    header.Updateon = DateTime.Now;
+    await _context.SaveChangesAsync();
+    return header.Id;
+}
+
+public async Task<ApiResultsModel> DeleteBudgetAllocateTransferMore(int id)
+{
+    try
+    {
+        var header = await _context.OagwbgBudgetallocatetransfezmores.FirstOrDefaultAsync(x => x.Id == id);
+        if (header == null)
+            return new ApiResultsModel { Success = false, Message = "ไม่พบข้อมูล", Type = "error" };
+
+        var categories = await _context.OagwbgBudgetallocatetransfermoreCategories
+            .Where(x => x.Budgetallocatetransfermoreid == id).ToListAsync();
+
+        _context.OagwbgBudgetallocatetransfermoreCategories.RemoveRange(categories);
+        _context.OagwbgBudgetallocatetransfezmores.Remove(header);
+        await _context.SaveChangesAsync();
+
+        return new ApiResultsModel { Success = true, Message = "ลบข้อมูลสำเร็จ", Type = "success" };
+    }
+    catch (Exception ex)
+    {
+        return new ApiResultsModel { Success = false, Message = ex.Message, Type = "error" };
+    }
+}
+
+#endregion
+```
+
+---
+
+## 18. API Controller — แก้ไข `OAGBudget.API\Controllers\BudgetController.cs`
+
+เพิ่ม region ต่อจาก `#endregion` ของ BudgetAllocateTransfer (หลังบรรทัด 1320):
+
+```csharp
+#region BudgetAllocateTransferMore
+
+[HttpGet("GetBudgetAllocateTransferMoreList")]
+public async Task<IActionResult> GetBudgetAllocateTransferMoreList(
+    [FromQuery] SearchBudgetAllocateTransferMoreList data)
+{
+    try { return Ok(await _service.GetBudgetAllocateTransferMoreList(data)); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+[HttpGet("GetBudgetAllocateTransferMoreDetail/{id}")]
+public async Task<IActionResult> GetBudgetAllocateTransferMoreDetail(int id)
+{
+    try { return Ok(await _service.GetBudgetAllocateTransferMoreDetail(id)); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+[HttpGet("GetBudgetRequestMoreForTransfer")]
+public async Task<IActionResult> GetBudgetRequestMoreForTransfer([FromQuery] int? budgetyear)
+{
+    try { return Ok(await _service.GetBudgetRequestMoreForTransfer(budgetyear)); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+[HttpGet("GetBudgetGovernmentByRequestId/{requestId}")]
+public async Task<IActionResult> GetBudgetGovernmentByRequestId(int requestId)
+{
+    try { return Ok(await _service.GetBudgetGovernmentByRequestId(requestId)); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+[HttpPost("SaveBudgetAllocateTransferMoreDetail")]
+public async Task<IActionResult> SaveBudgetAllocateTransferMoreDetail(
+    [FromBody] BudgetAllocateTransferMoreDetailModel data)
+{
+    try { return Ok(await _service.SaveBudgetAllocateTransferMoreDetail(data)); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+[HttpPost("ConfirmBudgetAllocateTransferMore")]
+public async Task<IActionResult> ConfirmBudgetAllocateTransferMore([FromBody] int? id)
+{
+    try { return Ok(await _service.ConfirmBudgetAllocateTransferMore(id)); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+[HttpGet("CancelBudgetAllocateTransferMore")]
+public async Task<IActionResult> CancelBudgetAllocateTransferMore(int id)
+{
+    try { return Ok(await _service.ChangeStatusBudgetAllocateTransferMore(id, "90109")); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+[HttpDelete("DeleteBudgetAllocateTransferMore/{id}")]
+public async Task<IActionResult> DeleteBudgetAllocateTransferMore(int id)
+{
+    try { return Ok(await _service.DeleteBudgetAllocateTransferMore(id)); }
+    catch (Exception ex) { return StatusCode(500, ex.Message); }
+}
+
+#endregion
+```
+
+---
+
+## 19. MVC Controller — แก้ไข `OAGBudget\Controllers\BudgetController.cs`
+
+เพิ่ม region ต่อจาก `#endregion` ของ BudgetAllocateTransfer (หลังบรรทัด 3674):
+
+```csharp
+#region BudgetAllocateTransferMore
+
+public async Task<IActionResult> BudgetAllocateTransferMoreList()
+{
+    ViewBag.DropdownRegion = await _dropdowns.DropdownRegion();
+    var statusList = await _dropdowns.DropdownMasterStatus();
+    string[] allowedStatus = { "80101", "80201" };
+    ViewBag.DropdownStatus = statusList.Where(x => allowedStatus.Contains(x.Value)).OrderBy(x => x.Value);
+    return View();
+}
+
+[HttpPost]
+public async Task<IActionResult> SearchBudgetAllocateTransferMoreList(
+    SearchBudgetAllocateTransferMoreList filter)
+{
+    try
+    {
+        var data = await _budgetService.GetBudgetAllocateTransferMoreList(filter);
+        if (data != null)
+        {
+            return Json(new
+            {
+                draw = Request.Form["draw"],
+                recordsTotal = data.ItemCount,
+                recordsFiltered = data.ItemCount,
+                data = data.ResultData
+            });
+        }
+        return Json(new { success = false, message = "ไม่พบข้อมูล" });
+    }
+    catch (Exception ex)
+    {
+        return Json(new { success = false, message = ex.Message });
+    }
+}
+
+public async Task<IActionResult> BudgetAllocateTransferMoreDetail(int? id)
+{
+    ViewBag.DropdownRegion = await _dropdowns.DropdownRegion() ?? new List<SelectListItem>();
+    ViewBag.DropdownPlan = await _dropdowns.DropdownBudgetPlanCode();
+    ViewBag.DropdownProduct = await _dropdowns.DropdownBudgetProduct();
+    ViewBag.DropdownActivity = await _dropdowns.DropdownBudgetActivity();
+    ViewBag.DropdownCategoryAll = await _dropdowns.DropdownCategory();
+    ViewBag.DropdownBudgetCode = await _dropdowns.DropdownBudgetCode();
+
+    var budgetSourceDropdown = await _dropdowns.DropdownBudgetSource();
+    var allowBudgetSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "100", "200", "300", "400" };
+    ViewBag.DropdownBudgetSource = budgetSourceDropdown
+        .Where(x => !string.IsNullOrEmpty(x.Value) && allowBudgetSourceIds.Contains(x.Value))
+        .ToList();
+
+    var bankDropdown = await _dropdowns.DropdownBankAccountList();
+    ViewBag.DropdownBankAccount = bankDropdown
+        .Where(x => string.Equals(x.S11Attribute8, "YES", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    var data = new BudgetAllocateTransferMoreDetailViewModel();
+    if (id != null)
+        data = await _budgetService.GetBudgetAllocateTransferMoreDetail(id.Value);
+    else
+        data.Detail = new OagwbgVBudgetallocatetransfermore();
+
+    return View(data);
+}
+
+public async Task<IActionResult> SaveBudgetAllocateTransferMoreDetail(
+    [FromBody] BudgetAllocateTransferMoreDetailModel model)
+{
+    try
+    {
+        var id = await _budgetService.SaveBudgetAllocateTransferMoreDetail(model);
+        return Json(new { success = true, data = id });
+    }
+    catch (Exception ex)
+    {
+        return Json(new { success = false, message = ex.Message });
+    }
+}
+
+public async Task<IActionResult> ConfirmBudgetAllocateTransferMore(int id)
+{
+    var result = await _budgetService.ConfirmBudgetAllocateTransferMore(id);
+    return Ok(result);
+}
+
+public async Task<IActionResult> CancelBudgetAllocateTransferMore(int id)
+{
+    var result = await _budgetService.ChangeStatusBudgetAllocateTransferMore(id, "90109");
+    return Ok(result);
+}
+
+public async Task<IActionResult> DeleteBudgetAllocateTransferMore(int id)
+{
+    var result = await _budgetService.DeleteBudgetAllocateTransferMore(id);
+    return Ok(result);
+}
+
+#endregion
+```
+
+---
+
+## 20. Razor Views — ไฟล์ใหม่
+
+### 📄 [สร้างใหม่] `OAGBudget\Views\Budget\BudgetAllocateTransferMoreList.cshtml`
+
+> Copy จาก `BudgetAllocateTransferList.cshtml` แล้วเปลี่ยน:
+> - URL ทุก action → `BudgetAllocateTransferMore`
+> - Title → "โอนจัดสรรเพิ่มเติม"
+> - Column ตาราง DataTable เหมือนเดิม
+
+```html
+@{
+    ViewData["Title"] = "โอนจัดสรรเพิ่มเติม";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="content-header">
+    <h1>โอนจัดสรรเพิ่มเติม</h1>
+</div>
+
+<section class="content">
+    <div class="card">
+        <div class="card-body">
+            @* Filter form — เหมือน BudgetAllocateTransferList *@
+            <form id="searchForm">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label>ครั้งที่</label>
+                        <input type="number" id="Roundno" name="Roundno" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label>วันที่โอน</label>
+                        <input type="text" id="TransferDate" name="TransferDate" class="form-control datepicker" />
+                    </div>
+                    <div class="col-md-3">
+                        <label>ภาค</label>
+                        <select id="Regionid" name="Regionid" class="form-control select2">
+                            <option value="">-- ทั้งหมด --</option>
+                            @foreach (var item in ViewBag.DropdownRegion as IEnumerable<SelectListItem> ?? new List<SelectListItem>())
+                            {
+                                <option value="@item.Value">@item.Text</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>สถานะ</label>
+                        <select id="StatusId" name="StatusId" class="form-control select2">
+                            <option value="">-- ทั้งหมด --</option>
+                            @foreach (var item in ViewBag.DropdownStatus as IEnumerable<SelectListItem> ?? new List<SelectListItem>())
+                            {
+                                <option value="@item.Value">@item.Text</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-md-12 text-right">
+                        <button type="button" id="btnSearch" class="btn btn-primary">ค้นหา</button>
+                        <a href="@Url.Action("BudgetAllocateTransferMoreDetail","Budget")" class="btn btn-success">+ สร้างใหม่</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mt-2">
+        <div class="card-body">
+            <table id="dataTable" class="table table-bordered table-striped" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>ครั้งที่</th>
+                        <th>วันที่โอน</th>
+                        <th>ภาค</th>
+                        <th>ปีงบประมาณ</th>
+                        <th>ยอดรวม</th>
+                        <th>สถานะ</th>
+                        <th>จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+@section Scripts {
+<script>
+    var table = $('#dataTable').DataTable({
+        processing: true, serverSide: false,
+        ajax: {
+            url: '@Url.Action("SearchBudgetAllocateTransferMoreList","Budget")',
+            type: 'POST',
+            data: function (d) {
+                return $.extend({}, d, {
+                    Roundno: $('#Roundno').val(),
+                    TransferDate: $('#TransferDate').val(),
+                    Regionid: $('#Regionid').val(),
+                    StatusId: $('#StatusId').val()
+                });
+            }
+        },
+        columns: [
+            { data: 'roundno' },
+            { data: 'transferdate', render: function(d){ return d ? new Date(d).toLocaleDateString('th-TH') : ''; } },
+            { data: 'regionid' },
+            { data: 'budgetyear' },
+            { data: 'totalreceiveamount', render: $.fn.dataTable.render.number(',', '.', 2) },
+            { data: 'transferstatusname' },
+            {
+                data: 'id',
+                render: function (id, type, row) {
+                    var btns = '<a href="@Url.Action("BudgetAllocateTransferMoreDetail","Budget")/' + id + '" class="btn btn-xs btn-info">แก้ไข</a> ';
+                    if (row.transferstatus === '80101') {
+                        btns += '<button onclick="deleteRow(' + id + ')" class="btn btn-xs btn-danger">ลบ</button>';
+                    }
+                    return btns;
+                }
+            }
+        ]
+    });
+
+    $('#btnSearch').click(function () { table.ajax.reload(); });
+
+    function deleteRow(id) {
+        if (!confirm('ยืนยันการลบ?')) return;
+        $.ajax({
+            url: '@Url.Action("DeleteBudgetAllocateTransferMore","Budget")/' + id,
+            type: 'GET',
+            success: function () { table.ajax.reload(); }
+        });
+    }
+</script>
+}
+```
+
+### 📄 [สร้างใหม่] `OAGBudget\Views\Budget\BudgetAllocateTransferMoreDetail.cshtml`
+
+> โครงสร้างหลัก — ส่วน Header copy จาก `BudgetAllocateTransferDetail.cshtml`
+
+```html
+@model OAGBudget.Models.ViewModel.BudgetAllocateTransferMoreDetailViewModel
+@{
+    ViewData["Title"] = "โอนจัดสรรเพิ่มเติม (รายละเอียด)";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    bool isNew = Model.Detail.Id == 0;
+    bool isConfirmed = Model.Detail.Transferstatus == "80201";
+}
+
+<div class="content-header">
+    <h1>@(isNew ? "สร้างใบโอนจัดสรรเพิ่มเติม" : $"ใบโอนจัดสรรเพิ่มเติม ครั้งที่ {Model.Detail.Roundno}")</h1>
+</div>
+
+<section class="content">
+    @* ─── Header ─── *@
+    <div class="card">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <label>วันที่โอน</label>
+                    <input type="text" id="TransferDate" class="form-control datepicker"
+                           value="@Model.Detail.Transferdate?.ToString("dd/MM/yyyy")"
+                           @(isConfirmed ? "disabled" : "") />
+                </div>
+                <div class="col-md-3">
+                    <label>ภาค</label>
+                    <select id="Regionid" class="form-control select2" @(isConfirmed ? "disabled" : "")>
+                        @foreach (var item in ViewBag.DropdownRegion as IEnumerable<SelectListItem> ?? new List<SelectListItem>())
+                        {
+                            <option value="@item.Value" @(item.Value == Model.Detail.Regionid ? "selected" : "")>@item.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label>ปีงบประมาณ</label>
+                    <input type="number" id="Budgetyear" class="form-control"
+                           value="@Model.Detail.Budgetyear" @(isConfirmed ? "disabled" : "") />
+                </div>
+                <div class="col-md-2">
+                    <label>ประเภท</label>
+                    <select id="Transferorgtype" class="form-control" @(isConfirmed ? "disabled" : "")>
+                        <option value="1" @(Model.Detail.Transferorgtype == "1" ? "selected":"")>สบง.</option>
+                        <option value="2" @(Model.Detail.Transferorgtype == "2" ? "selected":"")>สบอ.</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label>สถานะ</label>
+                    <input type="text" class="form-control" value="@Model.Detail.Transferstatusname" disabled />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ─── ปุ่มเพิ่มจากคำขอ ─── *@
+    @if (!isConfirmed)
+    {
+        <div class="mb-2">
+            <button type="button" id="btnAddRequest" class="btn btn-primary">+ เพิ่มจากคำขอ</button>
+        </div>
+    }
+
+    @* ─── ตารางรายการ ─── *@
+    <div class="card">
+        <div class="card-body">
+            <table id="tblItems" class="table table-bordered table-sm">
+                <thead>
+                    <tr>
+                        <th>คำขอ</th>
+                        <th>แผนงาน</th>
+                        <th>ผลผลิต</th>
+                        <th>กิจกรรม</th>
+                        <th>รายการ</th>
+                        <th>รหัสงบ</th>
+                        <th>ยอดที่ขอ</th>
+                        <th>แหล่งเงินโอนออก</th>
+                        <th>ยอดโอน</th>
+                        @if (!isConfirmed) { <th>จัดการ</th> }
+                    </tr>
+                </thead>
+                <tbody id="itemBody">
+                    @* โหลดผ่าน JS จาก Model.Items *@
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @* ─── ปุ่ม Action ─── *@
+    <div class="mt-2">
+        @if (!isConfirmed)
+        {
+            <button id="btnSave" class="btn btn-success">บันทึก</button>
+        }
+        @if (!isNew && Model.Detail.Transferstatus == "80101")
+        {
+            <button id="btnConfirm" class="btn btn-warning">ยืนยัน</button>
+        }
+        <a href="@Url.Action("BudgetAllocateTransferMoreList","Budget")" class="btn btn-secondary">กลับ</a>
+    </div>
+</section>
+
+@* ─── Modal เลือกคำขอ ─── *@
+<div class="modal fade" id="modalSelectRequest" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header"><h5>เลือกคำขอรับจัดสรรเพิ่มเติม</h5></div>
+            <div class="modal-body">
+                <div class="row mb-2">
+                    <div class="col-md-3">
+                        <input type="number" id="filterBudgetyear" class="form-control" placeholder="ปีงบประมาณ" />
+                    </div>
+                    <div class="col-md-2">
+                        <button id="btnSearchRequest" class="btn btn-primary">ค้นหา</button>
+                    </div>
+                </div>
+                <table id="tblRequests" class="table table-bordered table-sm">
+                    <thead>
+                        <tr>
+                            <th>เลขที่คำขอ</th>
+                            <th>หน่วยเบิกจ่าย</th>
+                            <th>ศูนย์ต้นทุน</th>
+                            <th>ปีงบประมาณ</th>
+                            <th>ยอดรวม</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ─── Modal ระบุโอนออก ─── *@
+<div class="modal fade" id="modalTransferOut" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5>ระบุแหล่งเงินโอนออก</h5></div>
+            <div class="modal-body">
+                <input type="hidden" id="currentItemIndex" />
+                <div class="mb-2">
+                    <label>แหล่งเงิน</label>
+                    <select id="selSource" class="form-control select2">
+                        @foreach (var item in ViewBag.DropdownBudgetSource as IEnumerable<SelectListItem> ?? new List<SelectListItem>())
+                        {
+                            <option value="@item.Value">@item.Text</option>
+                        }
+                    </select>
+                </div>
+                <div id="divOtherSource">
+                    @* แสดงเฉพาะเมื่อ Source != 100 *@
+                    <div class="mb-2">
+                        <label>หน่วยเบิกจ่าย</label>
+                        <input type="text" id="txtDept" class="form-control" />
+                    </div>
+                    <div class="mb-2">
+                        <label>ศูนย์ต้นทุน</label>
+                        <input type="text" id="txtCostCenter" class="form-control" />
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label>ยอดโอน (บาท)</label>
+                    <input type="number" id="txtTransferAmount" class="form-control" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnConfirmTransferOut" class="btn btn-primary">ตกลง</button>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">ยกเลิก</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    var itemList = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Items));
+
+    // แสดงรายการที่มีอยู่แล้ว
+    renderItems();
+
+    // ─── Modal เลือกคำขอ ───
+    $('#btnAddRequest').click(function () {
+        loadRequests();
+        $('#modalSelectRequest').modal('show');
+    });
+
+    $('#btnSearchRequest').click(function () { loadRequests(); });
+
+    function loadRequests() {
+        var year = $('#filterBudgetyear').val() || $('#Budgetyear').val();
+        $.get('@Url.Action("GetBudgetRequestMoreForTransfer","Budget")', { budgetyear: year }, function (data) {
+            // TODO: wire through MVC → API proxy action
+            var html = '';
+            $.each(data, function (i, r) {
+                html += '<tr><td>' + (r.code||'') + '</td><td>' + (r.departmentid||'') + '</td>' +
+                        '<td>' + (r.costcenterid||'') + '</td><td>' + (r.budgetyear||'') + '</td>' +
+                        '<td>' + (r.totalrequestamount||0).toLocaleString() + '</td>' +
+                        '<td><button class="btn btn-xs btn-success" onclick="selectRequest(' + r.id + ')">เลือก</button></td></tr>';
+            });
+            $('#requestBody').html(html);
+        });
+    }
+
+    function selectRequest(requestId) {
+        $.get('@Url.Action("GetBudgetGovernmentByRequestId","Budget")/' + requestId, function (items) {
+            // TODO: wire through MVC → API proxy action
+            $.each(items, function (i, item) {
+                itemList.push({
+                    ref: item.id,
+                    budgetrequestid: requestId,
+                    categoryid: item.categoryid,
+                    budgetplanid: item.budgetplanid ? item.budgetplanid.toString() : null,
+                    productid: item.productid ? item.productid.toString() : null,
+                    activityid: item.activitycodeid ? item.activitycodeid.toString() : null,
+                    budgetcode: item.budgetcode,
+                    totalrequestamount: item.totalrequestamount,
+                    categoryname: item.categoryname || '',
+                    // ฝั่งโอนออก — รอ user เลือก
+                    budgetsourceid: null, departmentid: null, costcenterid: null, totaltransferamount: null
+                });
+            });
+            renderItems();
+        });
+        $('#modalSelectRequest').modal('hide');
+    }
+
+    // ─── Modal โอนออก ───
+    function openTransferOut(idx) {
+        $('#currentItemIndex').val(idx);
+        var item = itemList[idx];
+        $('#selSource').val(item.budgetsourceid || '100').trigger('change');
+        $('#txtTransferAmount').val(item.totaltransferamount || item.totalrequestamount);
+        $('#modalTransferOut').modal('show');
+    }
+
+    $('#selSource').change(function () {
+        if ($(this).val() === '100') {
+            $('#divOtherSource').hide();
+        } else {
+            $('#divOtherSource').show();
+            var idx = $('#currentItemIndex').val();
+            var item = itemList[idx];
+            $('#txtDept').val(item.departmentid || '');
+            $('#txtCostCenter').val(item.costcenterid || '');
+        }
+    });
+
+    $('#btnConfirmTransferOut').click(function () {
+        var idx = parseInt($('#currentItemIndex').val());
+        var source = $('#selSource').val();
+        itemList[idx].budgetsourceid = source;
+        itemList[idx].totaltransferamount = parseFloat($('#txtTransferAmount').val()) || 0;
+        if (source === '100') {
+            itemList[idx].departmentid = '2900600000';
+            itemList[idx].costcenterid = '2906999999';
+        } else {
+            itemList[idx].departmentid = $('#txtDept').val();
+            itemList[idx].costcenterid = $('#txtCostCenter').val();
+        }
+        renderItems();
+        $('#modalTransferOut').modal('hide');
+    });
+
+    function renderItems() {
+        var html = '';
+        $.each(itemList, function (i, item) {
+            var sourceLabel = item.budgetsourceid
+                ? (item.budgetsourceid === '100' ? '100 (งบประมาณ)' : item.budgetsourceid + ' (' + (item.departmentid||'') + ')')
+                : '<span class="text-danger">ยังไม่ระบุ</span>';
+            html += '<tr>' +
+                '<td>' + (item.budgetrequestid||'') + '</td>' +
+                '<td>' + (item.budgetplanid||'') + '</td>' +
+                '<td>' + (item.productid||'') + '</td>' +
+                '<td>' + (item.activityid||'') + '</td>' +
+                '<td>' + (item.categoryname||'') + '</td>' +
+                '<td>' + (item.budgetcode||'') + '</td>' +
+                '<td class="text-right">' + (item.totalrequestamount||0).toLocaleString('th', {minimumFractionDigits:2}) + '</td>' +
+                '<td>' + sourceLabel + '</td>' +
+                '<td class="text-right">' + (item.totaltransferamount||0).toLocaleString('th', {minimumFractionDigits:2}) + '</td>' +
+                '<td><button class="btn btn-xs btn-info" onclick="openTransferOut(' + i + ')">ระบุโอนออก</button> ' +
+                '<button class="btn btn-xs btn-danger" onclick="removeItem(' + i + ')">ลบ</button></td>' +
+                '</tr>';
+        });
+        $('#itemBody').html(html);
+    }
+
+    function removeItem(idx) { itemList.splice(idx, 1); renderItems(); }
+
+    // ─── Save ───
+    $('#btnSave').click(function () {
+        var payload = {
+            BudgetAllocateTransferMore: {
+                Id: @Model.Detail.Id,
+                Bookno: null,
+                Transferdate: $('#TransferDate').val(),
+                Regionid: $('#Regionid').val(),
+                Budgetyear: parseInt($('#Budgetyear').val()),
+                Transferorgtype: $('#Transferorgtype').val(),
+                Transferstatus: '80101',
+                Budgetsourceid: null,
+                Totalreceiveamount: itemList.reduce(function(s,x){ return s + (x.totaltransferamount||0); }, 0)
+            },
+            CategoryList: itemList.map(function(x) {
+                return {
+                    Id: 0,
+                    Ref: x.ref,
+                    Categoryid: x.categoryid,
+                    Budgetplanid: x.budgetplanid,
+                    Productid: x.productid,
+                    Activityid: x.activityid,
+                    BudgetCodeId: x.budgetcode,
+                    BudgetSourceId: x.budgetsourceid,
+                    DepartmentId: x.departmentid,
+                    CostCenterId: x.costcenterid,
+                    Totaltransferamount: x.totaltransferamount,
+                    Totalallocateamount: x.totaltransferamount
+                };
+            })
+        };
+        $.ajax({
+            url: '@Url.Action("SaveBudgetAllocateTransferMoreDetail","Budget")',
+            type: 'POST', contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function (res) {
+                if (res.success) {
+                    alert('บันทึกสำเร็จ');
+                    window.location.href = '@Url.Action("BudgetAllocateTransferMoreDetail","Budget")/' + res.data;
+                } else {
+                    alert('เกิดข้อผิดพลาด: ' + res.message);
+                }
+            }
+        });
+    });
+
+    // ─── Confirm ───
+    $('#btnConfirm').click(function () {
+        if (!confirm('ยืนยันการโอนจัดสรรเพิ่มเติม?')) return;
+        $.ajax({
+            url: '@Url.Action("ConfirmBudgetAllocateTransferMore","Budget")/@Model.Detail.Id',
+            type: 'POST',
+            success: function (res) {
+                alert(res.success ? 'ยืนยันสำเร็จ' : 'เกิดข้อผิดพลาด: ' + res.message);
+                if (res.success) location.reload();
+            }
+        });
+    });
+</script>
+}
+```
