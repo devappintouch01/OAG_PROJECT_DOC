@@ -518,3 +518,123 @@ if (currentHeader == null)
 |--|-----------|-----------|
 | ลำดับค้นหา | BudgetTransfer ก่อน → fallback ถ้า null | BudgetAdjust ก่อนเสมอ → ไล่ FK หา BudgetTransferId |
 | ความเสี่ยง | ถ้า `BudgetAdjust.Id` ตรงกับ `BudgetTransfer.Id` ของ document อื่น → link ผิดตัว | ไม่มีความเสี่ยง ไล่จาก FK ตาม schema |
+
+---
+
+## Bug Report: ปัญหาหลังจาก Dev แก้ Roundno (Item 11)
+
+> วันที่พบ: 2026-06-09
+
+### โครงสร้างข้อมูล (สำหรับ reference)
+
+สำหรับ 1 เอกสารโอนเปลี่ยนแปลง ที่มี N รายการโอนออก — แต่ละ TransferOut row สร้าง record คู่กัน:
+
+```
+OagwbgBudgettransfer.Id = 10  (roundno=5)  ← TransferOut row 0
+   └─ OagwbgBudgetadjust.Id = 20  (Budgettransferid=10)
+
+OagwbgBudgettransfer.Id = 11  (roundno=5)  ← TransferOut row 1
+   └─ OagwbgBudgetadjust.Id = 21  (Budgettransferid=11)
+
+OagwbgVBudgettransferChanges → returns row Id=20, Id=21  (= BudgetAdjust.Id)
+```
+
+`GetBudgetAdjustDetail` จึง set `result.Id = firstHeader.Id = 20`  
+→ `$('#Id').val()` บน BudgetAdjustDetail.cshtml = 20 เสมอ ทุก row ใช้ค่าเดิม
+
+---
+
+### ปัญหา A — รายการรับโอนซ้ำ / ลบไม่ออก
+
+**สาเหตุ:** Frontend ส่ง payload.Id ผิด
+
+`TransferIn_Edit.cshtml` (line ~362):
+```javascript
+var transferOutId = transferOutRows[rowIdx].id;  // ← คำนวณถูก เช่น = 21 ถ้า edit row 1
+let payload = {
+    Id: parseInt('@Model.Id') || 0,  // ❌ BUG: ส่ง 20 (first row) แทนที่จะส่ง 21
+    ...
+};
+// transferOutId ถูกคำนวณไว้แต่ไม่ได้ใส่ใน payload!
+```
+
+`SaveBudgetReceiveTransferIn` รับ `model.Id = 20` เสมอ ไม่ว่า user จะกด Edit row ไหน:
+- Delete filter: `Budgetadjustid == 20 OR Budgetadjustid == null`
+- Insert: `Budgetadjustid = 20`
+
+เมื่อ dev แก้ roundno โดยเปลี่ยน logic ทำให้ `model.Id` ถูก interpret ต่างกัน:
+- Save ครั้งก่อน (pre-fix): records มี `Budgetadjustid = X`
+- Save ครั้งหลัง (post-fix): delete filter ใช้ `Budgetadjustid == Y` (Y ≠ X)
+- Records เก่า (X) ไม่ถูกลบ → insert records ใหม่ (Y) ซ้อนขึ้นมา = **ซ้ำ ลบไม่ออก**
+
+**Fix:**
+```javascript
+// TransferIn_Edit.cshtml — เปลี่ยน payload.Id
+let payload = {
+    Id: transferOutId,  // ✅ ใช้ transferOutRows[rowIdx].id แทน Model.Id
+    ...
+};
+```
+
+---
+
+### ปัญหา B — รายการทั้งหมด Sync กัน (กดแก้ไข row ไหนก็เห็นข้อมูลเดียวกัน)
+
+**สาเหตุ:** `GetBudgetAdjustDetail` โหลด TransferIn โดยไม่ filter ด้วย BudgetAdjust.Id
+
+`BudgetService.cs` (line 16306-16308):
+```csharp
+// ทำซ้ำสำหรับทุก header (row) ใน allHeaders:
+var receiveJItems = await _context.OagwbgVBudgetreceives
+    .Where(x => x.Budgettransferid == currentTransferId   // ← ดึง J ทั้งหมดของ BudgetTransfer
+             && x.Budgetreceivetype == "J")
+    // ❌ ขาด filter ด้วย BudgetAdjust.Id → ทุก row เห็น TransferIn ชุดเดียวกัน
+    .ToListAsync();
+```
+
+**Fix:**
+```csharp
+var receiveJItems = await _context.OagwbgVBudgetreceives
+    .Where(x => x.Budgettransferid == currentTransferId
+             && x.Budgetreceivetype == "J"
+             && x.Budgetadjustid == header.Id)   // ✅ เพิ่ม filter ด้วย BudgetAdjust.Id
+    .ToListAsync();
+```
+
+> **หมายเหตุ:** ต้องตรวจสอบว่า `OagwbgVBudgetreceives` (View) มี column `Budgetadjustid` หรือไม่
+> ถ้าไม่มี → ต้อง query จาก `OagwbgBudgetreceives` (Table) แทน หรือ alter view เพิ่ม column
+
+---
+
+### ปัญหา C — เพิ่มรายการโอนออกได้แค่ 1 รายการ (TransferIn หายเมื่อเพิ่ม row ใหม่)
+
+**สาเหตุ:** `SaveTransferModifyItem` ลบ TransferIn ของ **ทุก header** ใน Roundno เดียวกัน ก่อน save TransferOut ใหม่
+
+`BudgetService.cs` (line 13957-14033):
+```csharp
+foreach (var headerDraft in existingHeaders)   // ← วนทุก BudgetTransfer ใน roundno เดียวกัน
+{
+    // ลบ TransferIn ทั้งหมดของแต่ละ header
+    var oldTargets = await _context.OagwbgBudgetreceives
+        .Where(x => x.Budgettransferid == headerDraft.Id && x.Budgetreceivetype == "J")
+        .ToListAsync();
+    _context.OagwbgBudgetreceives.RemoveRange(oldTargets);  // ❌ ลบ TransferIn ของทุก row!
+}
+```
+
+ผลที่เกิด: เมื่อ user เพิ่ม TransferOut row ที่ 2 → save ลบ TransferIn ของ row แรกทิ้งด้วย  
+→ user เห็นว่า TransferIn หายไปเมื่อมีมากกว่า 1 TransferOut row
+
+**Fix แนวทาง:** Decouple การ save TransferOut ออกจากการแตะ TransferIn  
+- ในขั้นตอน edit TransferOut (เพิ่ม/แก้ row) ไม่ควร delete TransferIn ของ row อื่น
+- ลบ TransferIn เฉพาะ row ที่ถูก replace จริงๆ เท่านั้น (filter ด้วย `Budgetadjustid` หรือ `Budgettransferid` ของ row นั้นโดยเฉพาะ)
+
+---
+
+### สรุปไฟล์และจุดที่ต้องแก้
+
+| # | ปัญหา | ไฟล์ | บรรทัด | Fix |
+|---|-------|------|--------|-----|
+| A | payload.Id ผิด | `TransferIn_Edit.cshtml` | ~362 | เปลี่ยน `Model.Id` → `transferOutId` |
+| B | โหลด TransferIn ไม่ filter | API `BudgetService.cs` | 16306 | เพิ่ม `&& x.Budgetadjustid == header.Id` |
+| C | ลบ TransferIn ทุก row เมื่อ save TransferOut | API `BudgetService.cs` | 13963 | decouple — ลบเฉพาะ row ที่เปลี่ยนแปลง |
