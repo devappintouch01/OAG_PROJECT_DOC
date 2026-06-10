@@ -638,3 +638,90 @@ foreach (var headerDraft in existingHeaders)   // ← วนทุก BudgetTran
 | A | payload.Id ผิด | `TransferIn_Edit.cshtml` | ~362 | เปลี่ยน `Model.Id` → `transferOutId` |
 | B | โหลด TransferIn ไม่ filter | API `BudgetService.cs` | 16306 | เพิ่ม `&& x.Budgetadjustid == header.Id` |
 | C | ลบ TransferIn ทุก row เมื่อ save TransferOut | API `BudgetService.cs` | 13963 | decouple — ลบเฉพาะ row ที่เปลี่ยนแปลง |
+
+---
+
+## Bug Report: รายการโอนออก row ที่ 2 กลายเป็นหน่วยงานของ row แรก
+
+> วันที่พบ: 2026-06-10
+
+### อาการ
+
+เมื่อผู้ใช้เพิ่มรายการโอนออก row ที่ 2 จากหน่วยงานที่แตกต่างจาก row แรก หลังบันทึกพบว่า row ที่ 2 แสดงหน่วยงานเดียวกับ row แรก
+
+### Root Cause
+
+**`SaveTransferModifyItem` (API `BudgetService.cs`)**
+
+มี 2 จุดที่ใช้ค่าจาก **header-level** (`model.DepartmentId`, `model.CostCenterId`) แทน **per-item** (`giverItem.DepartmentId`, `giverItem.CostCenterId`):
+
+**จุดที่ 1 — `resolvedRegion` คำนวณ _นอก_ loop (line 13798-13802)**
+```csharp
+// ❌ คำนวณครั้งเดียวก่อน foreach โดยใช้ model.CostCenterId (หน่วยงานจาก form header)
+string? regionFromCc = await _context.OagwbgVExtOagglCostCenterVs
+    .Where(x => x.Id == model.CostCenterId)   // ← ค่าของ row แรกเสมอ
+    .Select(x => x.Regionid)
+    .FirstOrDefaultAsync();
+var resolvedRegion = regionFromCc?.ToString() ?? model.TransferRegion;
+```
+
+**จุดที่ 2 — ภายใน loop ตอน set currentHeader (line 14122-14125)**
+```csharp
+foreach (var giverItem in unifiedItems)
+{
+    currentHeader.Departmentid   = model.DepartmentId;   // ❌ header-level เสมอ
+    currentHeader.Costcenterid   = model.CostCenterId;   // ❌ header-level เสมอ
+    currentHeader.Transferregion = resolvedRegion;       // ❌ คำนวณจาก row แรก
+
+    // fields อื่น ใช้ per-item ถูกต้อง:
+    currentHeader.Activityid = giverItem.ActivityId ?? model.ActivityId;
+    currentHeader.Productid  = giverItem.OutputId   ?? model.ProductId;
+    currentHeader.Categoryid = giverItem.CategoryId ?? model.CategoryidGiver;
+}
+```
+
+**จุดที่ 3 — OagwbgBudgetadjust insert (line 14380-14382) copy มาจาก currentHeader ที่ผิดแล้ว**
+```csharp
+Departmentid   = currentHeader.Departmentid,     // ❌ ผิดตาม currentHeader
+Costcenterid   = currentHeader.Costcenterid,     // ❌ ผิดตาม currentHeader
+Transferregion = currentHeader.Transferregion,   // ❌ ผิดตาม currentHeader
+```
+
+### ข้อสังเกต: Budget Sender Lookup ยังทำงานถูก
+
+ยอดเงินที่ตัดใช้ per-item ถูกต้อง (line 14147-14148):
+```csharp
+// ✅ Sender lookup ใช้ giverItem ถูก
+var searchDepartmentid = giverItem.DepartmentId ?? model.DepartmentId;
+var searchCostcenterid = giverItem.CostCenterId ?? model.CostCenterId;
+```
+
+ดังนั้น **ยอดเงินตัดถูก แต่ record ที่บันทึกใน BudgetTransfer/BudgetAdjust แสดงหน่วยงานผิด**
+
+### วิธีแก้
+
+**`BudgetService.cs` ใน `SaveTransferModifyItem` — ย้าย region resolve เข้าใน loop และใช้ per-item:**
+
+```csharp
+// ✅ resolve per-item ภายใน loop แทนที่ model.DepartmentId/CostCenterId
+var itemDepartmentId = giverItem.DepartmentId ?? model.DepartmentId;
+var itemCostCenterId = giverItem.CostCenterId ?? model.CostCenterId;
+
+string? itemRegionFromCc = await _context.OagwbgVExtOagglCostCenterVs
+    .Where(x => x.Id == itemCostCenterId)
+    .Select(x => x.Regionid)
+    .FirstOrDefaultAsync();
+var itemRegion = itemRegionFromCc?.ToString() ?? model.TransferRegion;
+
+currentHeader.Departmentid   = itemDepartmentId;   // ✅
+currentHeader.Costcenterid   = itemCostCenterId;   // ✅
+currentHeader.Transferregion = itemRegion;         // ✅
+```
+
+### สรุปไฟล์และจุดที่ต้องแก้
+
+| จุด | ไฟล์ | บรรทัด | ปัญหา | Fix |
+|----|------|--------|-------|-----|
+| 1 | API `BudgetService.cs` | 13798 | `resolvedRegion` คำนวณนอก loop ด้วย `model.CostCenterId` | ย้ายเข้าใน loop ใช้ `giverItem.CostCenterId` |
+| 2 | API `BudgetService.cs` | 14122-14125 | `Departmentid`/`Costcenterid`/`Transferregion` ใช้ header-level | เปลี่ยนเป็น `giverItem.DepartmentId ?? model.DepartmentId` |
+| 3 | API `BudgetService.cs` | 14380-14382 | BudgetAdjust insert copy จาก currentHeader ที่ผิดแล้ว | แก้ตามจุดที่ 2 จะถูกต้องเองโดยอัตโนมัติ |
