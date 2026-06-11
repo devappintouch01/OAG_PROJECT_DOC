@@ -418,47 +418,72 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 
 ## 12. ลำดับการพัฒนา (Development Phases)
 
+> **อัปเดตล่าสุด: 2026-06-12**
+
 ### Phase 0 — Prerequisite (ทำก่อน — ไม่ใช่งานของ Feature นี้)
 > งานนี้จะดำเนินการก่อน BudgetAllocateTransferMore ทั้งหมดอยู่แล้ว
-1. เพิ่ม `IS_APPROVE` column ใน `OAGWBG_BUDGETGOVERNMENT` (item-level approval)
-2. อัปเดต View `OAGWBG_V_BUDGETGOVERNMENT` ให้ expose `IS_APPROVE`
-3. นำ `IS_APPROVE` ออกจาก `OAGWBG_BUDGETREQUEST` (Header)
-4. อัปเดต `OagwbgBudgetrequest.cs` และ `OagwbgVBudgetrequest.cs` ให้ตรงกัน
+
+| # | งาน | สถานะ (PREPROD) | หมายเหตุ |
+|---|---|---|---|
+| 0.1 | เพิ่ม `IS_APPROVE` column ใน `OAGWBG_BUDGETGOVERNMENT` | ✅ เสร็จแล้ว | `NUMBER`, NULLABLE, DEFAULT NULL — verified 2026-06-12 |
+| 0.2 | อัปเดต View `OAGWBG_V_BUDGETGOVERNMENT` ให้ expose `IS_APPROVE` | ❌ ยังไม่ได้ทำ | **บล็อก Phase 2** — ต้องทำก่อน |
+| 0.3 | นำ `IS_APPROVE` ออกจาก `OAGWBG_BUDGETREQUEST` | ⏳ ยังไม่ได้ทำ | ไม่บล็อก feature นี้ ทำทีหลังได้ |
+| 0.4 | อัปเดต `OagwbgBudgetrequest.cs` / `OagwbgVBudgetrequest.cs` | ⏳ รอ 0.3 | — |
 
 ### Phase 1 — DB + DAL
-1. รัน DDL สร้างตารางใหม่:
-   - `OAGWBG_BUDGETALLOCATETRANSFERMORE` + Sequence
-   - `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` + Sequence
-2. สร้าง Oracle Views:
-   - `OAGWBG_V_BUDGETALLOCATETRANSFERMORE`
-   - `OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY`
-3. สร้าง DAL C# Models:
-   - `OagwbgBudgetallocatetransfermore.cs`
-   - `OagwbgBudgetallocatetransfermorecategory.cs`
-   - `OagwbgVBudgetallocatetransfermore.cs`
-   - `OagwbgVBudgetallocatetransfermorecategory.cs`
-4. Register Models ใน `OagwbgContext.cs`
 
-### Phase 2 — Backend Service + API
-> ⚠️ ต้อง Phase 0 เสร็จก่อน (เพื่อให้ `OAGWBG_V_BUDGETGOVERNMENT.IS_APPROVE` ใช้ได้)
-1. `GetBudgetRequestMoreForTransfer()` — Query คำขอสถานะ 20101
-2. `GetBudgetGovernmentByRequestId()` — Query `OAGWBG_V_BUDGETGOVERNMENT` WHERE BudgetStatus="C" AND IS_APPROVE=1
-3. Extract private method จาก `ConfirmBudgetAllocateTransfer` (line 15391)
-4. `SaveBudgetAllocateTransferMoreDetail()` — Header + Category + BudgetReceive
-5. `ConfirmBudgetAllocateTransferMore()` — เรียก extracted private method
-6. เพิ่ม endpoints ใน API Controller
+| # | งาน | สถานะ | หมายเหตุ |
+|---|---|---|---|
+| 1.1 | DDL: `OAGWBG_BUDGETALLOCATETRANSFERMORE` + Sequence | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.2 |
+| 1.2 | DDL: `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` + Sequence | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.2 |
+| 1.3 | DDL: `OAGWBG_V_BUDGETALLOCATETRANSFERMORE` | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.3 |
+| 1.4 | DDL: `OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY` | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.3 |
+| 1.5 | DAL Model: `OagwbgBudgetallocatetransfermore.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.6 | DAL Model: `OagwbgBudgetallocatetransfermorecategory.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.7 | DAL Model: `OagwbgVBudgetallocatetransfermore.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.8 | DAL Model: `OagwbgVBudgetallocatetransfermorecategory.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.9 | Register DbSets + Entity Config ใน `MOENDBContextBase.cs` | ✅ เสร็จแล้ว | แก้ไขแล้ว 2026-06-12 |
+
+### Phase 2 — Application Models + Service + API
+> ⚠️ `GetBudgetGovernmentByRequestId` ต้องการ Phase 0.2 ก่อน (View ต้องมี `IS_APPROVE`)
+
+| # | งาน | สถานะ | หมายเหตุ |
+|---|---|---|---|
+| 2.1 | `SearchBudgetAllocateTransferMoreList.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 2.2 | `BudgetAllocateTransferMoreDetailModel.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 2.3 | `BudgetAllocateTransferMoreDetailViewModel.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 2.4 | Service Interface — 8 method signatures | ✅ เสร็จแล้ว | แก้ไข BudgetService.cs 2026-06-12 |
+| 2.5 | Service Implementation — GetList, GetDetail, Save, Confirm, Delete | ✅ เสร็จแล้ว | แก้ไข BudgetService.cs 2026-06-12 |
+| 2.6 | API Controller — 8 endpoints | ✅ เสร็จแล้ว | แก้ไข OAGBudget.API BudgetController.cs 2026-06-12 |
 
 ### Phase 3 — MVC Controller + Views
-1. เพิ่ม Actions ใน MVC BudgetController
-2. สร้าง `BudgetAllocateTransferMoreList.cshtml`
-3. สร้าง `BudgetAllocateTransferMoreDetail.cshtml` พร้อม 2 modals (เลือกคำขอ + โอนออก)
-4. เพิ่ม menu navigation
+
+| # | งาน | สถานะ | หมายเหตุ |
+|---|---|---|---|
+| 3.1 | MVC Controller — 7 actions + dropdown loading | ✅ เสร็จแล้ว | แก้ไข OAGBudget BudgetController.cs 2026-06-12 |
+| 3.2 | `BudgetAllocateTransferMoreList.cshtml` + partial table | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 3.3 | `BudgetAllocateTransferMoreDetail.cshtml` พร้อม 2 modals | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
+| 3.4 | เพิ่ม menu navigation | ❌ ยังไม่ได้ทำ | — |
 
 ### Phase 4 — Integration & Test
-1. ทดสอบ flow ครบ: สร้าง → เพิ่มจากหลายคำขอ → ระบุโอนออก (Source 100 และ 200/400) → บันทึก → ยืนยัน
-2. ตรวจสอบ balance ใน OAGWBG_BUDGETRECEIVE หลังยืนยัน
-3. Edge case: ไม่พบ BudgetReceive ต้นทาง → สร้างใหม่ยอด 0
-4. Edge case: ใบโอนเดียวดึงจาก 2+ คำขอ
+
+| # | งาน | สถานะ |
+|---|---|---|
+| 4.1 | ทดสอบ flow ครบ: สร้าง → เพิ่มจากหลายคำขอ → ระบุโอนออก → บันทึก → ยืนยัน | ⏳ รอ DB (Phase 1.1-1.4) + Phase 0.2 |
+| 4.2 | ตรวจสอบ balance ใน `OAGWBG_BUDGETRECEIVE` หลังยืนยัน | ⏳ รอ 4.1 |
+| 4.3 | Edge case: ไม่พบ BudgetReceive ต้นทาง → สร้างใหม่ยอด 0 | ⏳ รอ 4.1 |
+| 4.4 | Edge case: ใบโอนเดียวดึงจาก 2+ คำขอ | ⏳ รอ 4.1 |
+
+---
+
+### สรุปสิ่งที่ต้องทำต่อ (Critical Path)
+
+```
+[ทำทันที]  Phase 0.2 — อัปเดต OAGWBG_V_BUDGETGOVERNMENT ให้ expose IS_APPROVE
+[ทำทันที]  Phase 1.1-1.4 — รัน SQL DDL สร้าง table/view บน PREPROD
+[หลังจากนั้น]  Phase 3.4 — เพิ่ม menu navigation
+[ทดสอบได้เลย]  Build solution + ตรวจ compile error
+```
 
 ---
 
