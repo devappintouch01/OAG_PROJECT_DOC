@@ -418,7 +418,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 
 ## 12. ลำดับการพัฒนา (Development Phases)
 
-> **อัปเดตล่าสุด: 2026-06-12**
+> **อัปเดตล่าสุด: 2026-06-12 00:02**
 
 ### Phase 0 — Prerequisite (ทำก่อน — ไม่ใช่งานของ Feature นี้)
 > งานนี้จะดำเนินการก่อน BudgetAllocateTransferMore ทั้งหมดอยู่แล้ว
