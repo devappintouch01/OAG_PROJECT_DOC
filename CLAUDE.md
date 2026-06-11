@@ -1,13 +1,5 @@
 # CLAUDE.md
 
-## Version Control
-
-โปรเจกต์นี้ใช้ **Team Foundation Server (TFS)** เป็น version control system
-
-- ไม่ใช่ Git — ไม่มี `.git` directory
-- การ check in/check out ใช้ TFS commands หรือ Visual Studio Team Explorer
-- Working directory คือ `..` (project root, หนึ่งระดับเหนือ directory นี้)
-
 ## Commit Messages
 
 Use **Conventional Commits** format:
