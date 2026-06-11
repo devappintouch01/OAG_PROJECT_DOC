@@ -725,3 +725,160 @@ currentHeader.Transferregion = itemRegion;         // ✅
 | 1 | API `BudgetService.cs` | 13798 | `resolvedRegion` คำนวณนอก loop ด้วย `model.CostCenterId` | ย้ายเข้าใน loop ใช้ `giverItem.CostCenterId` |
 | 2 | API `BudgetService.cs` | 14122-14125 | `Departmentid`/`Costcenterid`/`Transferregion` ใช้ header-level | เปลี่ยนเป็น `giverItem.DepartmentId ?? model.DepartmentId` |
 | 3 | API `BudgetService.cs` | 14380-14382 | BudgetAdjust insert copy จาก currentHeader ที่ผิดแล้ว | แก้ตามจุดที่ 2 จะถูกต้องเองโดยอัตโนมัติ |
+
+---
+
+## Bug Report: รายการรับโอนไม่แสดงหลัง Dev Checkin ใหม่
+
+> วันที่พบ: 2026-06-11
+
+### อาการ
+
+หลังจาก Dev checkin code ใหม่ที่แก้ `roundno` และเพิ่ม `transferOutId` param ใน URL — รายการรับโอนที่เคยแสดงปกติกลับหายไปจากตาราง แม้ว่า record ยังคงถูกบันทึกลง `OAGWBG_BUDGETRECEIVE` เช่นเดิม
+
+### บริบท: โครงสร้าง ID ที่ใช้
+
+```
+BudgetAdjustDetail.cshtml:
+  pageId = $('#Id').val() = Model.Id = BudgetTransfer.Id  ← ID ของ header document
+
+Edit URL (หลัง dev checkin ใหม่):
+  /Budget/BudgetAdjustDetail_TransferIn_Edit/{pageId}
+     ?rowIdx={idx}
+     &transferOutId={item.id}   ← item.id = BudgetAdjust.Id (เพิ่มใหม่โดย dev)
+     &roundNo={roundNo}
+```
+
+### สาเหตุ — Bug 1: Save payload ส่ง Id ผิด
+
+**`BudgetAdjustDetail_TransferIn_Edit.cshtml` (line ~716)**
+
+Dev เพิ่ม param `transferOutId` ใน URL เพื่อให้ frontend หา `selectedIndex` ได้ถูกต้อง แต่ **payload ที่ส่ง save ยังคงใช้ `pageId` (BudgetTransfer.Id)**:
+
+```javascript
+const transferOutIdParam = parseInt(urlParams.get('transferOutId'));  // BudgetAdjust.Id ✅
+const pageId = parseInt('@Model.Id') || 0;   // BudgetTransfer.Id
+
+// ✅ selectedIndex ใช้ transferOutIdParam ได้ถูก
+if (!isNaN(transferOutIdParam) && transferOutIdParam > 0) {
+    selectedIndex = transferOutRows.findIndex(r => parseInt(r.id) === transferOutIdParam);
+}
+
+// ❌ payload.Id ยังส่ง pageId (BudgetTransfer.Id) ไม่ใช่ transferOutIdParam (BudgetAdjust.Id)
+var payload = {
+    Id: pageId,          // ❌ BudgetTransfer.Id — ผิด!
+    Roundno: roundNo,
+    IsTransferInAction: true,
+    TransferInItems: [...]
+};
+```
+
+**ผลที่เกิด:**
+
+```
+API รับ model.Id = BudgetTransfer.Id
+  → SaveBudgetReceiveTransferIn lookup: OagwbgBudgetadjusts.FirstOrDefault(a.Id == BudgetTransfer.Id)
+  → ถ้าไม่มี BudgetAdjust.Id ตรงกับ BudgetTransfer.Id → null → return error → ไม่มีการบันทึก
+  → ถ้าบังเอิญ sequence ซ้ำกัน → บันทึกแต่ Budgetadjustid = BudgetTransfer.Id (ผิด)
+```
+
+### สาเหตุ — Bug 2: Query แสดงผลใช้ View ที่ไม่มี J-type records
+
+**`GetBudgetAdjustDetail` API (BudgetService.cs ~line 16356)**
+
+Dev แก้ logic ใหม่: loop ตาม `OagwbgBudgetadjust` แต่ query TransferIn ผ่าน JOIN กับ `OagwbgVBudgetreceives`:
+
+```csharp
+foreach (var adj in adjusts)  // adj.Id = BudgetAdjust.Id
+{
+    // ❌ OagwbgVBudgetreceives เป็น View สำหรับงบประมาณคงเหลือ — ไม่รวม J-type records!
+    var receiveJItems = await (
+        from v in _context.OagwbgVBudgetreceives       // ❌ View นี้ไม่มี J-type
+        join br in _context.OagwbgBudgetreceives on v.Id equals br.Id  // JOIN จึงไม่ได้ match
+        where br.Budgetreceivetype == "J"
+           && br.Budgetadjustid == adj.Id
+        ...
+    ).ToListAsync();  // ← ผลลัพธ์ Empty เสมอ
+
+    if (!receiveJItems.Any())
+    {
+        // Fallback — query ตรงจาก table:
+        // WHERE Budgettransferid == header.Id
+        //   AND Budgetreceivetype == "J"
+        //   AND (Budgetadjustid == adj.Id OR Budgetadjustid == null)
+        //
+        // ❌ ปัญหา: records ที่ถูกบันทึกมี Budgetadjustid = BudgetTransfer.Id (จาก Bug 1)
+        //    แต่ fallback filter ด้วย adj.Id = BudgetAdjust.Id → ไม่ match → ยังคง Empty
+    }
+}
+```
+
+### ลำดับเหตุการณ์ (Chain of Events)
+
+```
+[1] User กด Save TransferIn
+    payload.Id = pageId = BudgetTransfer.Id   ← Bug 1
+
+[2] API: SaveBudgetReceiveTransferIn(model.Id = BudgetTransfer.Id)
+    → หา BudgetAdjust ด้วย a.Id == BudgetTransfer.Id
+    → ถ้า null → ไม่บันทึก, return error
+    → ถ้า match (sequence ซ้ำ) → บันทึก Budgetadjustid = BudgetTransfer.Id  (ผิด FK)
+
+[3] User reload หน้า / กด Edit
+    API: GetBudgetAdjustDetail
+    → Primary query: JOIN OagwbgVBudgetreceives + OagwbgBudgetreceives
+       WHERE Budgetreceivetype=="J" AND Budgetadjustid==adj.Id(BudgetAdjust.Id)
+       → View ไม่มี J-type → JOIN ไม่ match → Empty เสมอ  ← Bug 2
+
+    → Fallback query: WHERE Budgetadjustid==adj.Id(BudgetAdjust.Id)
+       → records ที่มีอยู่มี Budgetadjustid=BudgetTransfer.Id ≠ adj.Id → ไม่ match → ยัง Empty
+
+[4] Frontend: ได้ TransferIn = [] → ตารางแสดงว่างเปล่า
+```
+
+### วิธีแก้
+
+**Fix 1 — `TransferIn_Edit.cshtml` ~line 716:**
+
+```javascript
+// ❌ ก่อนแก้
+var payload = {
+    Id: pageId,   // BudgetTransfer.Id
+    ...
+};
+
+// ✅ หลังแก้
+var payload = {
+    Id: transferOutIdParam,   // BudgetAdjust.Id — ตรงกับสิ่งที่ API คาดหวัง
+    ...
+};
+```
+
+**Fix 2 — API `GetBudgetAdjustDetail` ~line 16356:**
+
+```csharp
+// ❌ ก่อนแก้ — JOIN กับ View ที่ไม่มี J-type
+var receiveJItems = await (
+    from v in _context.OagwbgVBudgetreceives    // ❌
+    join br in _context.OagwbgBudgetreceives on v.Id equals br.Id
+    where br.Budgetreceivetype == "J" && br.Budgetadjustid == adj.Id
+    ...
+).ToListAsync();
+
+// ✅ หลังแก้ — query ตรงจาก Table เสมอ ตัด JOIN กับ View ออก
+var receiveJItems = await _context.OagwbgBudgetreceives
+    .Where(x => x.Budgettransferid == header.Id
+             && x.Budgetreceivetype == "J"
+             && x.Budgetadjustid == adj.Id)
+    .ToListAsync();
+```
+
+> **หมายเหตุ:** Fix 2 จะทำงานได้สมบูรณ์เมื่อ Fix 1 ถูก deploy แล้ว (records ใหม่มี `Budgetadjustid` ถูกต้อง)  
+> สำหรับ records เก่าที่บันทึกด้วย `Budgetadjustid = BudgetTransfer.Id` ผิด อาจต้องมี data migration หรือ fallback query เพิ่มเติม
+
+### สรุปไฟล์และจุดที่ต้องแก้
+
+| # | ปัญหา | ไฟล์ | บรรทัด | Fix |
+|---|-------|------|--------|-----|
+| 1 | `payload.Id` ส่ง `BudgetTransfer.Id` แทน `BudgetAdjust.Id` | `BudgetAdjustDetail_TransferIn_Edit.cshtml` | ~716 | เปลี่ยน `Id: pageId` → `Id: transferOutIdParam` |
+| 2 | Primary query JOIN กับ View ที่ไม่มี J-type → Empty เสมอ | API `BudgetService.cs` | ~16356 | ตัด JOIN กับ `OagwbgVBudgetreceives` — query ตรงจาก Table แทน |
