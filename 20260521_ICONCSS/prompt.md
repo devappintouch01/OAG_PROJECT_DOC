@@ -53,6 +53,41 @@ ORDER BY SEQUENCE
 
 ---
 
+## ⚠️ OAGWBG_SYSTEMMENU — ข้อควรระวังในการเพิ่ม Menu
+
+> บันทึกจาก debug session 2026-06-12 (feature BudgetAllocateTransferMore)
+
+เมื่อเพิ่ม parent/child menu ใหม่ ต้องตั้งค่าทุก field ต่อไปนี้ให้ถูกต้อง มิฉะนั้น menu จะไม่แสดง:
+
+| Column | ค่าที่ถูก | ค่าที่ผิด (ระวัง) | เหตุผล |
+|---|---|---|---|
+| `ISPARENT` | `'1'` (สำหรับ parent) | `'Y'` | `Default.cshtml` เช็ค `item.Isparent == "1"` |
+| `ACTIVE` | `'1'` | `'Y'` | Oracle Function `OAGWBG_FN_BOOKINGSYSTEMMENU` เช็ค `M.ACTIVE = '1'` |
+| `ISSHOWINSITEMENU` | `'1'` | `'0'` หรือ NULL | Function เช็ค `M.ISSHOWINSITEMENU = '1'` |
+| `SYSTEMNAMEID` | `2` | NULL | จำเป็นต้องระบุ system |
+| `SYSTEMMENUGROUPID` | `2` | NULL | จำเป็นต้องระบุ group |
+| `ICONCSS` (child) | `NULL` (= bullet dot) | ค่า icon ใดๆ | ถ้าเป็น child item ที่ต้องการ bullet dot ให้ใส่ NULL |
+
+**ต้อง INSERT ใน `OAGWBG_SYSTEMMENUROLEASSIGN` ด้วยเสมอ:**
+```sql
+-- ถ้าไม่มี role assignment = menu จะไม่ return ให้ user เลย
+INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID, SYSTEMROLEID, SYSTEMMENUID, CREATEBY, CREATEON)
+VALUES (<next_id>, <role_id>, <menu_id>, -1, SYSDATE);
+```
+
+**Role IDs ที่ใช้งานในระบบ:** 1, 11, 21, 31, 41, 51, 91, 9921, 9931
+
+**Template สำหรับ child menu item ที่ถูกต้อง:**
+```sql
+INSERT INTO OAGWBG_SYSTEMMENU 
+(ID, MENUNAME, CONTROLLERNAME, ACTIONNAME, CONTROLLERMAINNAME, ICONCSS, SEQUENCE, 
+ ISPARENT, PARENTMENUID, ACTIVE, ISSHOWINSITEMENU, SYSTEMNAMEID, SYSTEMMENUGROUPID, CREATEBY, CREATEON)
+VALUES (<id>, '<ชื่อเมนู>', '<Controller>', '<Action>', '<Controller>',
+        NULL, <seq>, 'N', <parent_id>, '1', '1', 2, 2, -1, SYSDATE);
+```
+
+---
+
 ## 🛠️ SQL Bulk Update Scripts
 
 Below are the Oracle SQL scripts to bulk update the `OAGWBG_SYSTEMMENU` table for each version.

@@ -418,7 +418,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 
 ## 12. ลำดับการพัฒนา (Development Phases)
 
-> **อัปเดตล่าสุด: 2026-06-12 10:15**
+> **อัปเดตล่าสุด: 2026-06-12 14:30**
 
 ### Phase 0 — Prerequisite (ทำก่อน — ไม่ใช่งานของ Feature นี้)
 > Phase 0 ไม่บล็อก feature นี้ — 0.1 + 0.2 เสร็จแล้ว ✅
@@ -464,7 +464,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | 3.1 | MVC Controller — 7 actions + dropdown loading | ✅ เสร็จแล้ว | แก้ไข OAGBudget BudgetController.cs 2026-06-12 |
 | 3.2 | `BudgetAllocateTransferMoreList.cshtml` + partial table | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
 | 3.3 | `BudgetAllocateTransferMoreDetail.cshtml` พร้อม 2 modals | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
-| 3.4 | เพิ่ม menu navigation (Route: **<span style="color: red">/Budget/BudgetAllocateTransferMoreList</span>**) | ⏳ รอ PO | **Menu Structure** (PREPROD verified 2026-06-12): โอนเงินจัดสรรงบประมาณ (ID=137, ROOT, Seq=9) — ต้องเพิ่ม "โอนจัดสรรงบประมาณ เพิ่มเติม" เป็น child ของ 137 |
+| 3.4 | เพิ่ม menu navigation (Route: **<span style="color: red">/Budget/BudgetAllocateTransferMoreList</span>**) | ✅ เสร็จแล้ว (PREPROD) | ดู Section 13.4 สำหรับ SQL scripts และ debug history |
 
 ### Phase 4 — Code Build + Integration & Test
 
@@ -500,9 +500,9 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 [✅ เสร็จ]  Phase 0.2 — อัปเดต OAGWBG_V_BUDGETGOVERNMENT ให้ expose IS_APPROVE (PREPROD + PROD)
 [✅ เสร็จ]  Phase 1.1-1.4 — รัน SQL DDL สร้าง table/view บน PREPROD
 [✅ เสร็จ]  Build solution + ตรวจ compile error (0 errors)
+[✅ เสร็จ]  Phase 3.4 — เพิ่ม menu navigation บน PREPROD (ดู Section 13.4)
 [ต่อไป]  Phase 1.1-1.4 — รัน SQL DDL สร้าง table/view บน PROD
 [ต่อไป]  Phase 4.1-4.4 — ทดสอบ flow บน PREPROD
-[หลังจากนั้น]  Phase 3.4 — เพิ่ม menu navigation (รอ PO)
 ```
 
 ---
@@ -651,6 +651,82 @@ CREATE OR REPLACE VIEW OAGWBG.OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY AS
     LEFT JOIN OAGWBG.OAGWBG_MASTERCATEGORY mc
         ON c.CATEGORYID = mc.ID;
 ```
+
+### 13.4 Phase 3.4 — Menu Navigation
+
+**Executed on PREPROD: 2026-06-12 10:45 – 14:30**
+
+#### Final Menu Structure
+
+```
+📂 โอนเงินจัดสรรงบประมาณ  (ID=137, ISPARENT='1')
+   ├── โอนจัดสรรงบประมาณ        (ID=222, SEQ=0) → Budget.BudgetAllocateTransferList
+   └── โอนจัดสรรงบประมาณ เพิ่มเติม (ID=221, SEQ=1) → Budget.BudgetAllocateTransferMoreList
+```
+
+#### SQL Scripts (ลำดับการ execute จริง)
+
+```sql
+-- ── Step 1: Set ID=137 as PARENT ──
+UPDATE OAGWBG_SYSTEMMENU SET ISPARENT = 'Y' WHERE ID = 137;
+
+-- ── Step 2: Insert child ID=221 ──
+INSERT INTO OAGWBG_SYSTEMMENU 
+(ID, MENUNAME, PARENTMENUID, SEQUENCE, CONTROLLERNAME, ACTIONNAME,
+ ISPARENT, ACTIVE, ISSHOWINSITEMENU, SYSTEMNAMEID, SYSTEMMENUGROUPID,
+ ICONCSS, CREATEBY, CREATEON)
+VALUES (221, 'โอนจัดสรรงบประมาณ เพิ่มเติม', 137, 1, 'Budget', 'BudgetAllocateTransferMoreList',
+        'N', 'Y', '1', 2, 2, NULL, -1, SYSDATE);
+
+COMMIT;
+```
+
+**Debug Fixes ที่ต้องทำเพิ่ม (สำคัญมาก — บันทึกไว้สำหรับ PROD):**
+
+```sql
+-- Fix 1: ISPARENT ต้องเป็น '1' ไม่ใช่ 'Y'
+-- (code ใน Default.cshtml เช็ค item.Isparent == "1")
+UPDATE OAGWBG_SYSTEMMENU SET ISPARENT = '1' WHERE ID = 137;
+
+-- Fix 2: ACTIVE ต้องเป็น '1' ไม่ใช่ 'Y'
+-- (Oracle Function OAGWBG_FN_BOOKINGSYSTEMMENU เช็ค M.ACTIVE = '1')
+UPDATE OAGWBG_SYSTEMMENU SET ACTIVE = '1' WHERE ID = 221;
+
+-- Fix 3: ต้อง insert role ใน OAGWBG_SYSTEMMENUROLEASSIGN
+-- (function join กับ table นี้ ถ้าไม่มี record = menu ไม่ return ให้ user)
+INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID, SYSTEMROLEID, SYSTEMMENUID, CREATEBY, CREATEON)
+VALUES (290, 1, 221, -1, SYSDATE);
+INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID, SYSTEMROLEID, SYSTEMMENUID, CREATEBY, CREATEON)
+VALUES (291, 31, 221, -1, SYSDATE);
+
+-- Fix 4: สร้าง child ใหม่ ID=222 สำหรับเมนูเดิม + ล้าง controller/action ของ parent
+INSERT INTO OAGWBG_SYSTEMMENU 
+(ID, MENUNAME, CONTROLLERNAME, ACTIONNAME, CONTROLLERMAINNAME, ICONCSS, SEQUENCE, 
+ ISPARENT, PARENTMENUID, ACTIVE, ISSHOWINSITEMENU, SYSTEMNAMEID, SYSTEMMENUGROUPID, CREATEBY, CREATEON)
+VALUES (222, 'โอนจัดสรรงบประมาณ', 'Budget', 'BudgetAllocateTransferList', 'Budget',
+        NULL, 0, 'N', 137, '1', '1', 2, 2, -1, SYSDATE);
+
+UPDATE OAGWBG_SYSTEMMENU SET CONTROLLERNAME=NULL, ACTIONNAME=NULL WHERE ID=137;
+
+-- Role สำหรับ ID=222
+INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID, SYSTEMROLEID, SYSTEMMENUID, CREATEBY, CREATEON)
+VALUES (292, 1, 222, -1, SYSDATE);
+INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID, SYSTEMROLEID, SYSTEMMENUID, CREATEBY, CREATEON)
+VALUES (293, 31, 222, -1, SYSDATE);
+
+COMMIT;
+```
+
+#### Root Causes ที่พบระหว่าง Debug
+
+| ปัญหา | สาเหตุ | แก้ไข |
+|---|---|---|
+| Parent menu ไม่แสดง sub-items | `ISPARENT = 'Y'` แต่ code เช็ค `== "1"` | UPDATE เป็น `'1'` |
+| Child menu ไม่ถูก return จาก function | `ACTIVE = 'Y'` แต่ function เช็ค `M.ACTIVE = '1'` | UPDATE เป็น `'1'` |
+| Child menu ไม่ถูก return จาก function | ไม่มี record ใน `OAGWBG_SYSTEMMENUROLEASSIGN` | INSERT role 1 และ 31 |
+| Parent menu ต้องการ child ของตัวเดิมด้วย | Parent เดิม (ID=137) link ตรงไปหน้า List แต่ถูกเปลี่ยนเป็น parent label | สร้าง child ID=222 + ล้าง controller/action ของ parent |
+
+> ⚠️ **สำคัญสำหรับ PROD**: ต้อง run ทุก Fix ข้างต้น ไม่ใช่แค่ Step 1-2 เดิม
 
 ---
 
