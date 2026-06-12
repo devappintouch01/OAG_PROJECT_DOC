@@ -418,31 +418,32 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 
 ## 12. ลำดับการพัฒนา (Development Phases)
 
-> **อัปเดตล่าสุด: 2026-06-12 00:02**
+> **อัปเดตล่าสุด: 2026-06-12 10:15**
 
 ### Phase 0 — Prerequisite (ทำก่อน — ไม่ใช่งานของ Feature นี้)
-> งานนี้จะดำเนินการก่อน BudgetAllocateTransferMore ทั้งหมดอยู่แล้ว
+> Phase 0 ไม่บล็อก feature นี้ — 0.1 + 0.2 เสร็จแล้ว ✅
 
-| # | งาน | สถานะ (PREPROD) | หมายเหตุ |
-|---|---|---|---|
-| 0.1 | เพิ่ม `IS_APPROVE` column ใน `OAGWBG_BUDGETGOVERNMENT` | ✅ เสร็จแล้ว | `NUMBER`, NULLABLE, DEFAULT NULL — verified 2026-06-12 |
-| 0.2 | อัปเดต View `OAGWBG_V_BUDGETGOVERNMENT` ให้ expose `IS_APPROVE` | ❌ ยังไม่ได้ทำ | **บล็อก Phase 2** — ต้องทำก่อน |
-| 0.3 | นำ `IS_APPROVE` ออกจาก `OAGWBG_BUDGETREQUEST` | ⏳ ยังไม่ได้ทำ | ไม่บล็อก feature นี้ ทำทีหลังได้ |
-| 0.4 | อัปเดต `OagwbgBudgetrequest.cs` / `OagwbgVBudgetrequest.cs` | ⏳ รอ 0.3 | — |
+| # | งาน | สถานะ (PREPROD) | สถานะ (PROD) | หมายเหตุ |
+|---|---|---|---|---|
+| 0.1 | เพิ่ม `IS_APPROVE` column ใน `OAGWBG_BUDGETGOVERNMENT` (table) | ✅ เสร็จแล้ว | ✅ เสร็จแล้ว | `NUMBER(1)`, NULLABLE, DEFAULT NULL — สร้างโดย dev อื่น; verified 2026-06-12 |
+| 0.2 | อัปเดต View `OAGWBG_V_BUDGETGOVERNMENT` ให้ expose `IS_APPROVE` | ✅ เสร็จแล้ว | ✅ เสร็จแล้ว | **ทำโดย Claude** — `CREATE OR REPLACE VIEW` (PREPROD + PROD) |
+| 0.2b | อัปเดต C# model `OagwbgVBudgetgovernment.cs` + DbContext | ✅ เสร็จแล้ว | ✅ (ใช้ร่วมกัน) | **ทำโดย Claude** — เพิ่ม `public int? Is_Approve` + entity config |
+| 0.3 | นำ `IS_APPROVE` ออกจาก `OAGWBG_BUDGETREQUEST` (table) + View | ⏳ ยังไม่ได้ทำ | ⏳ ยังไม่ได้ทำ | ไม่บล็อก feature — ทำทีหลังได้ |
+| 0.4 | อัปเดต `OagwbgBudgetrequest.cs` / `OagwbgVBudgetrequest.cs` | ⏳ รอ 0.3 | ⏳ รอ 0.3 | ไม่บล็อก feature |
 
 ### Phase 1 — DB + DAL
 
-| # | งาน | สถานะ | หมายเหตุ |
-|---|---|---|---|
-| 1.1 | DDL: `OAGWBG_BUDGETALLOCATETRANSFERMORE` + Sequence | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.2 |
-| 1.2 | DDL: `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` + Sequence | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.2 |
-| 1.3 | DDL: `OAGWBG_V_BUDGETALLOCATETRANSFERMORE` | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.3 |
-| 1.4 | DDL: `OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY` | ❌ ยังไม่ได้รัน | SQL อยู่ใน Section 13.3 |
-| 1.5 | DAL Model: `OagwbgBudgetallocatetransfermore.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
-| 1.6 | DAL Model: `OagwbgBudgetallocatetransfermorecategory.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
-| 1.7 | DAL Model: `OagwbgVBudgetallocatetransfermore.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
-| 1.8 | DAL Model: `OagwbgVBudgetallocatetransfermorecategory.cs` | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
-| 1.9 | Register DbSets + Entity Config ใน `MOENDBContextBase.cs` | ✅ เสร็จแล้ว | แก้ไขแล้ว 2026-06-12 |
+| # | งาน | สถานะ (PREPROD) | สถานะ (PROD) | หมายเหตุ |
+|---|---|---|---|---|
+| 1.1 | DDL: `OAGWBG_BUDGETALLOCATETRANSFERMORE` + Sequence | ✅ เสร็จแล้ว | ❌ ยังไม่ได้รัน | verified 2026-06-12 |
+| 1.2 | DDL: `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` + Sequence | ✅ เสร็จแล้ว | ❌ ยังไม่ได้รัน | verified 2026-06-12 |
+| 1.3 | DDL: `OAGWBG_V_BUDGETALLOCATETRANSFERMORE` | ✅ เสร็จแล้ว | ❌ ยังไม่ได้รัน | verified 2026-06-12 |
+| 1.4 | DDL: `OAGWBG_V_BUDGETALLOCATETRANSFERMORE_CATEGORY` | ✅ เสร็จแล้ว | ❌ ยังไม่ได้รัน | verified 2026-06-12 |
+| 1.5 | DAL Model: `OagwbgBudgetallocatetransfermore.cs` | ✅ เสร็จแล้ว | ✅ (ใช้ร่วมกัน) | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.6 | DAL Model: `OagwbgBudgetallocatetransfermorecategory.cs` | ✅ เสร็จแล้ว | ✅ (ใช้ร่วมกัน) | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.7 | DAL Model: `OagwbgVBudgetallocatetransfermore.cs` | ✅ เสร็จแล้ว | ✅ (ใช้ร่วมกัน) | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.8 | DAL Model: `OagwbgVBudgetallocatetransfermorecategory.cs` | ✅ เสร็จแล้ว | ✅ (ใช้ร่วมกัน) | สร้างไฟล์แล้ว 2026-06-12 |
+| 1.9 | Register DbSets + Entity Config ใน `MOENDBContextBase.cs` | ✅ เสร็จแล้ว | ✅ (ใช้ร่วมกัน) | แก้ไขแล้ว 2026-06-12 |
 
 ### Phase 2 — Application Models + Service + API
 > ⚠️ `GetBudgetGovernmentByRequestId` ต้องการ Phase 0.2 ก่อน (View ต้องมี `IS_APPROVE`)
@@ -463,26 +464,45 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | 3.1 | MVC Controller — 7 actions + dropdown loading | ✅ เสร็จแล้ว | แก้ไข OAGBudget BudgetController.cs 2026-06-12 |
 | 3.2 | `BudgetAllocateTransferMoreList.cshtml` + partial table | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
 | 3.3 | `BudgetAllocateTransferMoreDetail.cshtml` พร้อม 2 modals | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
-| 3.4 | เพิ่ม menu navigation | ❌ ยังไม่ได้ทำ | — |
+| 3.4 | เพิ่ม menu navigation | ⏳ รอ PO | Hold — รอ PO ยืนยันตำแหน่งใน menu (2026-06-12) |
 
-### Phase 4 — Integration & Test
+### Phase 4 — Code Build + Integration & Test
 
-| # | งาน | สถานะ |
-|---|---|---|
-| 4.1 | ทดสอบ flow ครบ: สร้าง → เพิ่มจากหลายคำขอ → ระบุโอนออก → บันทึก → ยืนยัน | ⏳ รอ DB (Phase 1.1-1.4) + Phase 0.2 |
+| # | งาน | สถานะ | หมายเหตุ |
+|---|---|---|---|
+| 4.0 | Build solution — ตรวจ compile error | ✅ เสร็จแล้ว | Build succeeded (0 errors) — 2026-06-12 10:00 |
+| 4.1 | ทดสอบ flow ครบ: สร้าง → เพิ่มจากหลายคำขอ → ระบุโอนออก → บันทึก → ยืนยัน | ⏳ รอ DB (Phase 1.1-1.4 PREPROD) + Phase 0.2 |
 | 4.2 | ตรวจสอบ balance ใน `OAGWBG_BUDGETRECEIVE` หลังยืนยัน | ⏳ รอ 4.1 |
 | 4.3 | Edge case: ไม่พบ BudgetReceive ต้นทาง → สร้างใหม่ยอด 0 | ⏳ รอ 4.1 |
 | 4.4 | Edge case: ใบโอนเดียวดึงจาก 2+ คำขอ | ⏳ รอ 4.1 |
 
 ---
 
+## Build Fixes (2026-06-12 10:00)
+
+### CS Compiler Errors (5 items fixed)
+
+| ปัญหา | ไฟล์ | สาเหตุ | วิธีแก้ |
+|---|---|---|---|
+| CS1503 | BudgetService.cs (API) line 16258 | `.Skip(data.Skip).Take(data.Take)` — ไม่มี property | เปลี่ยนเป็น `.Sort(data.Sorting).Page(data.Paging)` pattern |
+| CS1061 | BudgetService.cs (API) line 16308 | `x.IS_APPROVE` แต่ property ชื่อ `Is_Approve` | เปลี่ยนเป็น `x.Is_Approve` |
+| CS1739 | BudgetService.cs (API) line 16433 | `deleteFuncAsync:` แต่ signature ใช้ `removeFuncAsync:` | เปลี่ยน parameter name เป็น `removeFuncAsync:` |
+| CS1061 x8 | BudgetController.cs (MVC) lines 3699-3787 | MVC project มี `IBudgetService` แยก ไม่มี TransferMore methods | เพิ่ม interface region + 8 implementation methods ใน MVC BudgetService.cs |
+| RZ1031 x2 | BudgetAllocateTransferMoreDetail.cshtml lines 94-95 | `@(Model.detail?.Transferorgtype == "1" ? "selected" : "")` ใน attribute | เปลี่ยนเป็น `selected="@(Model.detail != null && Model.detail.Transferorgtype == "1")"` pattern |
+
+**Status**: ✅ All fixed — Build succeeded (0 errors)
+
+---
+
 ### สรุปสิ่งที่ต้องทำต่อ (Critical Path)
 
 ```
-[ทำทันที]  Phase 0.2 — อัปเดต OAGWBG_V_BUDGETGOVERNMENT ให้ expose IS_APPROVE
-[ทำทันที]  Phase 1.1-1.4 — รัน SQL DDL สร้าง table/view บน PREPROD
-[หลังจากนั้น]  Phase 3.4 — เพิ่ม menu navigation
-[ทดสอบได้เลย]  Build solution + ตรวจ compile error
+[✅ เสร็จ]  Phase 0.2 — อัปเดต OAGWBG_V_BUDGETGOVERNMENT ให้ expose IS_APPROVE (PREPROD + PROD)
+[✅ เสร็จ]  Phase 1.1-1.4 — รัน SQL DDL สร้าง table/view บน PREPROD
+[✅ เสร็จ]  Build solution + ตรวจ compile error (0 errors)
+[ต่อไป]  Phase 1.1-1.4 — รัน SQL DDL สร้าง table/view บน PROD
+[ต่อไป]  Phase 4.1-4.4 — ทดสอบ flow บน PREPROD
+[หลังจากนั้น]  Phase 3.4 — เพิ่ม menu navigation (รอ PO)
 ```
 
 ---
