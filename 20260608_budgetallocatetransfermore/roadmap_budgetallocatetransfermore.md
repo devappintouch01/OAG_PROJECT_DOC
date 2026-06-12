@@ -464,7 +464,7 @@ OagwbgBudgetrequest (header คำขอ)        → OagwbgBudgetreceive (รา
 | 3.1 | MVC Controller — 7 actions + dropdown loading | ✅ เสร็จแล้ว | แก้ไข OAGBudget BudgetController.cs 2026-06-12 |
 | 3.2 | `BudgetAllocateTransferMoreList.cshtml` + partial table | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
 | 3.3 | `BudgetAllocateTransferMoreDetail.cshtml` พร้อม 2 modals | ✅ เสร็จแล้ว | สร้างไฟล์แล้ว 2026-06-12 |
-| 3.4 | เพิ่ม menu navigation | ⏳ รอ PO | Hold — รอ PO ยืนยันตำแหน่งใน menu (2026-06-12) |
+| 3.4 | เพิ่ม menu navigation (Route: **<span style="color: red">/Budget/BudgetAllocateTransferMoreList</span>**) | ⏳ รอ PO | **Menu Structure** (PREPROD verified 2026-06-12): โอนเงินจัดสรรงบประมาณ (ID=137, ROOT, Seq=9) — ต้องเพิ่ม "โอนจัดสรรงบประมาณ เพิ่มเติม" เป็น child ของ 137 |
 
 ### Phase 4 — Code Build + Integration & Test
 
