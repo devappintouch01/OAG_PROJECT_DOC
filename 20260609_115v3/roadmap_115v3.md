@@ -885,7 +885,7 @@ var receiveJItems = await _context.OagwbgBudgetreceives
 
 ---
 
-## Verify Report: Items 1–14 (Dev แจ้งว่าทำแล้ว)
+## Verify Report: Items 1–14 (13 มิ.ย. 69)
 
 > วันที่ Verify: 2026-06-13  
 > อ้างอิงไฟล์: `BudgetAdjustDetail.cshtml`, `BudgetAdjustDetail_TransferIn_Edit.cshtml`, `BudgetService.cs`
