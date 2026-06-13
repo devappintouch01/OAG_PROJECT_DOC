@@ -882,3 +882,178 @@ var receiveJItems = await _context.OagwbgBudgetreceives
 |---|-------|------|--------|-----|
 | 1 | `payload.Id` ส่ง `BudgetTransfer.Id` แทน `BudgetAdjust.Id` | `BudgetAdjustDetail_TransferIn_Edit.cshtml` | ~716 | เปลี่ยน `Id: pageId` → `Id: transferOutIdParam` |
 | 2 | Primary query JOIN กับ View ที่ไม่มี J-type → Empty เสมอ | API `BudgetService.cs` | ~16356 | ตัด JOIN กับ `OagwbgVBudgetreceives` — query ตรงจาก Table แทน |
+
+---
+
+## Verify Report: Items 1–14 (Dev แจ้งว่าทำแล้ว)
+
+> วันที่ Verify: 2026-06-13  
+> อ้างอิงไฟล์: `BudgetAdjustDetail.cshtml`, `BudgetAdjustDetail_TransferIn_Edit.cshtml`, `BudgetService.cs`
+
+### สรุปผลรวม
+
+| Item | ชื่อ | สถานะจริง | ปัญหาที่พบ |
+|------|------|-----------|-----------|
+| 1 | เลือกปีงบประมาณ + ประเภทหน่วย | ✅ ถูกต้อง | — |
+| 2 | กรอกวันที่โอน + คำอธิบาย + เหตุผล | ✅ ถูกต้อง | — |
+| 3 | Modal เพิ่มรายการโอนออก | ✅ ถูกต้อง | — (P3 รหัสงบประมาณ dynamic filter ถูกแก้แล้ว) |
+| 4 | เช็คงบ | ✅ ถูกต้อง | — |
+| 5 | บันทึกรายการ → แสดงในตาราง | ⚠️ บางส่วน | ยอดโอนออกเป็น `<div>` ไม่ใช่ `<input>` → ผู้ใช้กรอกยอดไม่ได้ |
+| 6 | ปุ่มแก้ไขแสดงหลังบันทึก | ✅ ถูกต้อง | — |
+| 7 | Header หน้ารับโอนแสดงข้อมูลโอนออก | ⚠️ Functional แต่ fragile | ยัง hardcoded ใน HTML, JS override ทีหลัง |
+| 8 | Modal เพิ่มรายการรับโอน | ✅ ถูกต้อง | — |
+| 9 | แสดงรายการรับโอน + Collapse/Expand | ⚠️ บางส่วน | Collapse All / Expand All ไม่มี handler |
+| 10 | กรอกยอดรับโอน + Validate | ✅ ถูกต้อง | — |
+| 11 | บันทึกรายการรับโอน | 🔴 มีบั๊กสำคัญ | 3 จุด (ดูด้านล่าง) |
+| 12 | Tab ศูนย์ต้นทุนโอนเปลี่ยนแปลง | ⚠️ บางส่วน | ไม่มีปุ่ม Save แยกต่างหาก |
+| 13 | เลือกบัญชีธนาคาร + หมายเหตุ + บันทึก | ⚠️ บางส่วน | Confirm ไม่ส่ง RefundCostCenters |
+| 14 | ไม่ให้กดยืนยันถ้ายังไม่เลือกธนาคารครบ | ❌ ยังไม่ทำ | ไม่มี bank validation ใน btn-Confirm |
+
+---
+
+### รายละเอียดปัญหาที่พบ
+
+#### Item 5 — ยอดโอนออกเป็น `<div>` ไม่ใช่ `<input>`
+
+**ไฟล์:** `BudgetAdjustDetail.cshtml` ~line 2033
+
+```javascript
+// ❌ ยอดโอนออกใน data row เป็น div — ผู้ใช้กรอกแก้ไขไม่ได้
+'<div class="transfer-out-amount fw-bold text-end" data-raw="' + (item.amountNum || 0) + '">' +
+     (item.amountFormatted || '0.00') +
+'</div>'
+```
+
+ทุก TransferOut row ที่เพิ่มใหม่จะมี `amountNum = 0` (line 1739) และผู้ใช้ไม่สามารถแก้ยอดโอนออกได้โดยตรงในตาราง เมื่อ Confirm ระบบจะส่ง `Amount: r.amountNum || 0` = 0 เสมอ ทำให้ยอดโอนออกใน DB เป็น 0
+
+**Fix:** เปลี่ยนจาก `<div>` เป็น `<input type="text">` และเพิ่ม event handler บันทึกค่าลงใน `transferOutRows[idx].amountNum`
+
+---
+
+#### Item 9 — Collapse All / Expand All ไม่มี Click Handler
+
+**ไฟล์:** `BudgetAdjustDetail_TransferIn_Edit.cshtml`
+
+ปุ่มใน `BudgetAdjustDetail_TransferIn.cshtml`:
+```html
+<button id="btn-CollapseAllTransferIn" ...>ย่อทั้งหมด</button>
+<button id="btn-ExpandAllTransferIn"   ...>แสดงทั้งหมด</button>
+```
+
+แต่ใน `BudgetAdjustDetail_TransferIn_Edit.cshtml` ไม่มี handler สำหรับทั้งสอง ID นี้ — มีแค่ `.btn-tin-toggle` (individual collapse ต่อ row)
+
+**Fix ที่ต้องเพิ่ม:**
+```javascript
+$('#btn-CollapseAllTransferIn').on('click', function() {
+    $('#tbodyTransferInList tr[data-collapse-key]').each(function() {
+        var key = $(this).data('collapse-key');
+        if (key) {
+            tinCollapsed[key] = true;
+            $(this).find('.btn-tin-toggle').text('+');
+            toggleTinChildren(key, true);
+        }
+    });
+});
+
+$('#btn-ExpandAllTransferIn').on('click', function() {
+    Object.keys(tinCollapsed).forEach(k => { tinCollapsed[k] = false; });
+    $('#tbodyTransferInList tr').show();
+    $('#tbodyTransferInList .btn-tin-toggle').text('-');
+});
+```
+
+---
+
+#### Item 11 — 3 จุดที่ยังมีบั๊กหลัง Dev Checkin
+
+**จุดที่ 1 — Delete filter ไม่กรองด้วย Budgetadjustid (ลบ TransferIn ทุก row)**
+
+`BudgetService.cs` ~line 13647:
+```csharp
+// ❌ ลบ J ทั้งหมดของ header โดยไม่ filter budgetadjustid
+var oldTargets = await _context.OagwbgBudgetreceives
+    .Where(x => x.Budgettransferid == currentHeaderId
+             && x.Budgetreceivetype == "J")   // ❌ ขาด && x.Budgetadjustid == budgetAdjustId
+    .ToListAsync();
+```
+
+เมื่อ save TransferIn ของ row ที่ 2 → ลบ TransferIn ของ row แรกด้วย
+
+**จุดที่ 2 — Insert ไม่ set Budgetadjustid ใน record ใหม่**
+
+`BudgetService.cs` ~line 13700-13716:
+```csharp
+var target = new OagwbgBudgetreceive {
+    Budgettransferid = currentHeader.Id,
+    // ❌ ไม่มี Budgetadjustid = budgetAdjustId
+    ...
+};
+```
+
+records ใหม่ไม่รู้ว่าเป็นของ TransferOut row ไหน → แสดงผลผิดในภายหลัง
+
+**จุดที่ 3 — GetBudgetAdjustDetail query J-type ผ่าน View ที่ไม่มี J-type**
+
+`BudgetService.cs` ~line 16866:
+```csharp
+// ❌ OagwbgVBudgetreceives เป็น View สำหรับ budget balance — ไม่รวม J-type
+var allDirectBrItems = await _context.OagwbgVBudgetreceives
+    .Where(x => x.Budgettransferid == header.Id && x.Budgetreceivetype == "J")
+    .ToListAsync();  // ← ผลลัพธ์ Empty เสมอ → TransferIn ไม่แสดง
+```
+
+**Fix ทั้ง 3 จุดต้องทำพร้อมกัน** (ต้องทำ Phase 1 DB ก่อน):
+```csharp
+// Fix 1 — ลบเฉพาะของ BudgetAdjust นี้
+var oldTargets = await _context.OagwbgBudgetreceives
+    .Where(x => x.Budgettransferid == currentHeaderId
+             && x.Budgetreceivetype == "J"
+             && x.Budgetadjustid == budgetAdjustId)   // ✅
+    .ToListAsync();
+
+// Fix 2 — Insert พร้อม FK
+var target = new OagwbgBudgetreceive {
+    Budgetadjustid = budgetAdjustId,  // ✅ เพิ่ม FK
+    Budgettransferid = currentHeader.Id,
+    ...
+};
+
+// Fix 3 — ใช้ Table แทน View
+var allDirectBrItems = await _context.OagwbgBudgetreceives  // ✅ Table ไม่ใช่ View
+    .Where(x => x.Budgettransferid == header.Id && x.Budgetreceivetype == "J")
+    .ToListAsync();
+```
+
+---
+
+#### Item 13 — Confirm Handler ไม่ส่ง RefundCostCenters
+
+**ไฟล์:** `BudgetAdjustDetail.cshtml` ~line 1086
+
+`#btnSave` handler เก็บ `refundCostCenters` และส่งใน payload ✅  
+แต่ `#btn-Confirm` handler (line 1086) ไม่มีการเก็บหรือส่ง `RefundCostCenters`:
+
+```javascript
+// ❌ btn-Confirm handler ไม่รวม refundCostCenters
+let dataList = {
+    TransferInItems: ...,
+    TransferOutItems: ...,
+    IsConfirm: true
+    // RefundCostCenters: ??? — ขาดหายไป
+};
+```
+
+ถ้าผู้ใช้กด Confirm โดยตรงโดยไม่กด Save ก่อน → ข้อมูลธนาคารจาก Tab ศูนย์ต้นทุนจะหายไป
+
+**Fix:** เพิ่มการเก็บ `refundCostCenters` ใน `#btn-Confirm` handler เหมือนใน `#btnSave`
+
+---
+
+#### Item 14 — ไม่มี Bank Validation ใน Confirm
+
+**ไฟล์:** `BudgetAdjustDetail.cshtml` ~line 1086-1226
+
+`#btn-Confirm` handler validate เฉพาะ: Transferdate, Budgetyear, Itemdetail, Reason, Transferorgtype  
+**ไม่มีการตรวจสอบว่าเลือก giver-bank / receiver-bank ครบทุก row** ใน Tab ศูนย์ต้นทุน
+
+ผู้ใช้สามารถ Confirm ได้โดยไม่เลือกธนาคาร → Oracle Interface อาจ error
