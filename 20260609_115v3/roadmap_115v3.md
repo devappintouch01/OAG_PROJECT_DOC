@@ -1265,3 +1265,129 @@ Block นี้เป็น legacy จากสมัยที่มีแค่
 | 4 | Override `unifiedItems[0]` ด้วยค่าของ row ล่าสุด | `BudgetService.cs` | ~13900-13909 | ลบ block override ออก |
 
 ผู้ใช้สามารถ Confirm ได้โดยไม่เลือกธนาคาร → Oracle Interface อาจ error
+
+---
+
+## Bug Report: Re-analysis หลัง Dev แก้รอบที่ 2 (2026-06-15)
+
+> Dev feedback: ปัญหา 4 (ทุก row กลายเป็น row ล่าสุด) **แก้แล้ว** ✅  
+> ปัญหา 3 (Tab ศูนย์ต้นทุน bank dropdown ว่าง) **ยังไม่ได้**  
+> Dev ลอง "เปลี่ยนเป็น BudgetTransfer.Id" แต่ "รายการลูกจะไม่แสดง"
+
+### สถานะ Code ปัจจุบัน (จาก Source Review)
+
+**ปัญหา 4 — แก้ถูกต้องแล้ว ✅**
+
+Dev ย้าย override block เข้าไปใน `if (unifiedItems.Count == 0)` (`BudgetService.cs` ~line 13897):
+```csharp
+if (unifiedItems.Count == 0)
+{
+    unifiedItems.Add(new TransferOutItemViewModel
+    {
+        Amount = model.TotalTransferAmount ?? 0m,
+        CategoryId = model.CategoryidGiver,
+        // ... ใช้ header-level values เฉพาะเมื่อไม่มี TransferOutItems
+    });
+}
+```
+→ เมื่อมี TransferOutItems หลาย row แล้ว block นี้จะไม่ run → ไม่ overwrite ✅
+
+---
+
+### ทำไม "เปลี่ยนเป็น BudgetTransfer.Id แล้วรายการลูกจะไม่แสดง"
+
+`GetBudgetAdjustDetail` loop หลักใช้ `header.Id` = **BudgetAdjust.Id** ตลอด:
+
+```csharp
+foreach (var header in allHeaders.GroupBy(x => x.Id).Select(g => g.First()))
+{
+    // ต้องใช้ BudgetAdjust.Id — ห้ามเปลี่ยนเป็น BudgetTransfer.Id
+    var adjusts = await _context.OagwbgBudgetadjusts
+        .Where(a => a.Id == header.Id).ToListAsync();  // ← a.Id = BudgetAdjust.Id
+
+    var allDirectBrItems = await _context.OagwbgVBudgetreceives
+        .Where(x => x.Budgetadjustid == header.Id && x.Budgetreceivetype == "J")
+        .ToListAsync();
+```
+
+ถ้า dev เปลี่ยน `header.Id` หรือ `allHeaders` query ให้ return BudgetTransfer.Id:
+- `OagwbgBudgetadjusts.Where(a => a.Id == BudgetTransfer.Id)` → ไม่พบ (Id คนละ table)
+- `adjusts.Any() = false` → ไปโค้ด `else` branch → TransferOut แสดงข้อมูลน้อยลง
+- → "รายการลูกจะไม่แสดง"
+
+**ข้อสรุป:** ส่วน `allHeaders` และ `header.Id` ใน loop หลักต้องคงเป็น **BudgetAdjust.Id** เสมอ  
+เฉพาะ **RefundCostCenters query** เท่านั้นที่ต้องใช้ BudgetTransfer.Id
+
+---
+
+### Root Cause จริงของ Bank Dropdown ว่าง — `?? mainHeaderView.Id` Fallback
+
+Code ปัจจุบัน (`BudgetService.cs` line 17058-17061):
+```csharp
+var firstBudgetTransferId = (await _context.OagwbgBudgetadjusts
+    .Where(a => a.Id == mainHeaderView.Id)
+    .Select(a => a.Budgettransferid)
+    .FirstOrDefaultAsync()) ?? mainHeaderView.Id;  // ← fallback ผิด!
+```
+
+**กรณีที่ `Budgettransferid` = null:**
+- `OagwbgBudgetadjust.Budgettransferid` อาจเป็น null ใน record เก่า (สร้างก่อน code version ปัจจุบัน)
+- `?? mainHeaderView.Id` → `firstBudgetTransferId = BudgetAdjust.Id` (e.g., Id=20)
+- RefundCostCenters ถูก save ด้วย `Transferid = BudgetTransfer.Id` (e.g., Id=10)
+- Load query: `Where(x.Transferid == 20)` → ไม่มีข้อมูล → `modelRefundCCs = []` → dropdown ว่าง
+
+**ตรวจสอบ:** query DB ตรง ๆ
+```sql
+SELECT ID, BUDGETTRANSFERID FROM OAGWBG_BUDGETADJUST
+WHERE ID = <mainHeaderView.Id ที่ใช้ทดสอบ>;
+```
+ถ้า `BUDGETTRANSFERID` เป็น null → นี่คือสาเหตุ
+
+---
+
+### วิธีแก้ที่ถูกต้อง
+
+**Fix A — อัปเดต Budgettransferid ใน UPDATE path** (`BudgetService.cs` ~line 14383):
+
+```csharp
+else  // update existing BudgetAdjust
+{
+    existingAdjust.Updateby = userId;
+    existingAdjust.Updateon = DateTime.Now;
+    existingAdjust.Budgettransferid = currentHeader.Id;  // ← เพิ่มบรรทัดนี้ (repair null ในอนาคต)
+    existingAdjust.Departmentid = searchDepartmentid;
+    // ... ส่วนอื่นเหมือนเดิม
+```
+
+**Fix B — ปรับ fallback ใน `firstBudgetTransferId`** (`BudgetService.cs` ~line 17058):
+
+```csharp
+// แทนที่ code เดิมด้วย
+int? resolvedTransferId = await _context.OagwbgBudgetadjusts
+    .Where(a => a.Id == mainHeaderView.Id)
+    .Select(a => a.Budgettransferid)
+    .FirstOrDefaultAsync();
+
+if (resolvedTransferId == null || resolvedTransferId == 0)
+{
+    // Fallback: หา BudgetTransfer.Id จาก Roundno เดียวกัน (แทน BudgetAdjust.Id)
+    resolvedTransferId = await _context.OagwbgBudgettransfers
+        .Where(t => t.Roundno == mainHeaderView.Roundno && t.Transfertype == "1")
+        .OrderBy(t => t.Id)
+        .Select(t => (int?)t.Id)
+        .FirstOrDefaultAsync();
+}
+var firstBudgetTransferId = resolvedTransferId ?? mainHeaderView.Id;
+```
+
+→ แก้ทั้ง record ใหม่ (ใช้ `Budgettransferid` โดยตรง) และ record เก่า (fallback via Roundno)
+
+---
+
+### สรุปสถานะปัจจุบัน
+
+| # | ปัญหา | สถานะ |
+|---|-------|--------|
+| 4 | ทุก row กลายเป็น row ล่าสุด | ✅ Dev แก้แล้วถูกต้อง |
+| 3B | Bank dropdown ว่าง (key mismatch) | ❌ `?? mainHeaderView.Id` fallback ผิด — ต้องใช้ Roundno fallback |
+| 3A | TransferInItems load | ✅ แสดงข้อมูลแล้ว (ตามที่เห็นใน screenshot) |
