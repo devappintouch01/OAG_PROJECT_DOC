@@ -1391,3 +1391,41 @@ var firstBudgetTransferId = resolvedTransferId ?? mainHeaderView.Id;
 | 4 | ทุก row กลายเป็น row ล่าสุด | ✅ Dev แก้แล้วถูกต้อง |
 | 3B | Bank dropdown ว่าง (key mismatch) | ❌ `?? mainHeaderView.Id` fallback ผิด — ต้องใช้ Roundno fallback |
 | 3A | TransferInItems load | ✅ แสดงข้อมูลแล้ว (ตามที่เห็นใน screenshot) |
+
+---
+
+## สถานะ Checkin ล่าสุด (2026-06-15)
+
+### ✅ TFS Changeset #19031 — Item 9: Collapse/Expand All
+
+**ไฟล์:** `BudgetAdjustDetail_TransferIn_Edit.cshtml`
+
+เพิ่ม click handlers สำหรับปุ่ม `#btn-CollapseAllTransferIn` และ `#btn-ExpandAllTransferIn` ที่มีอยู่แล้วใน HTML แต่ขาด JavaScript:
+- Collapse All: set `tinCollapsed[key] = true` + hide ทุก child row
+- Expand All: set `tinCollapsed[key] = false` + show ทุก child row
+
+---
+
+### ✅ TFS Changeset #19034 — Issue 1, 2A, 3B: BudgetService.cs
+
+**ไฟล์:** `BudgetService.cs`
+
+| Fix | จุดที่แก้ | รายละเอียด |
+|-----|----------|-----------|
+| Issue 1 | `mainHeader` create (~14175) | เพิ่ม `Categoryid = unifiedItems.FirstOrDefault()?.CategoryId` — ป้องกัน null ใน new document |
+| Issue 1 | idx>=1 UPDATE path (~14204) | เพิ่ม `currentHeader.Categoryid = giverItem.CategoryId ?? currentHeader.Categoryid` — sync Categoryid ของ BudgetTransfer ทุก row |
+| Issue 2A | J-type insert (~13717) | เพิ่ม `Budgetcodeid = inItem.BudgetCodeDisplay` — รหัสงบประมาณแสดงถูกต้องใน TransferIn |
+| Issue 3B-A | BudgetAdjust UPDATE (~14388) | เพิ่ม `existingAdjust.Budgettransferid = currentHeader.Id` — repair null ใน old records |
+| Issue 3B-B | `firstBudgetTransferId` (~17062) | แทน `?? mainHeaderView.Id` ด้วย Roundno-based BudgetTransfer lookup — bank dropdown pre-fill ทำงานแม้ `Budgettransferid` เคย null |
+
+---
+
+## งานที่เหลือ (ณ 2026-06-15)
+
+| # | รายการ | ความยาก | หมายเหตุ |
+|---|--------|---------|----------|
+| Issue 2B | `GetBudgetAdjustDetail` ไม่ map `BudgetTypeId/Display` ใน J-type items | กลาง | ต้อง lookup Category จาก `Categoryid` |
+| Item 7 | Header TransferIn_Edit ใช้ hardcoded text | กลาง | UX issue ไม่ critical |
+| Item 10 | Backend ไม่ validate ยอดรับโอน ≤ ยอดคงเหลือ | กลาง | Frontend validate แล้ว |
+| Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
+| Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
