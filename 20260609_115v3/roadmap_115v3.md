@@ -1056,4 +1056,212 @@ let dataList = {
 `#btn-Confirm` handler validate เฉพาะ: Transferdate, Budgetyear, Itemdetail, Reason, Transferorgtype  
 **ไม่มีการตรวจสอบว่าเลือก giver-bank / receiver-bank ครบทุก row** ใน Tab ศูนย์ต้นทุน
 
+---
+
+## Bug Report: ปัญหาที่พบหลัง Dev แก้ Roundno + TransferOutId
+
+> วันที่พบ: 2026-06-14
+
+### สรุปปัญหา
+
+| # | อาการ | ส่วนที่เกี่ยวข้อง |
+|---|-------|-----------------|
+| 1 | ประเภทค่าใช้จ่าย / รายการงบประมาณ ของ TransferOut เป็น null | API `GetBudgetAdjustDetail` + `SaveTransferModifyItem` |
+| 2 | รหัสงบประมาณ / ประเภทค่าใช้จ่าย ของ TransferIn ไม่แสดง | API `SaveBudgetReceiveTransferIn` + `GetBudgetAdjustDetail` |
+| 3 | Tab ศูนย์ต้นทุนที่โอนเปลี่ยนแปลง ไม่โหลดสิ่งที่บันทึกไว้ | `buildAdjustedCostCenterTab()` + key mismatch |
+| 4 | เพิ่ม TransferOut row ที่ 2 แล้ว Save → ทุก row กลายเป็นข้อมูลของ row ล่าสุด | API `SaveTransferModifyItem` ~line 13900 |
+
+---
+
+### ปัญหา 1 — ประเภทค่าใช้จ่าย / รายการงบประมาณ ใน TransferOut เป็น null
+
+**Root Cause:**
+
+`GetBudgetAdjustDetail` อ่านค่า BudgetType และ Category ของ TransferOut จาก View (line 16852-16853):
+```csharp
+BudgetTypeId = header.BudgettypeidSource,      // จาก View OagwbgVBudgettransferChanges
+BudgetTypeDisplay = header.BudgettypenameSource,
+CategoryDisplay = fallbackCategory?.Name ?? sourceFund?.Categoryname ?? header.CategorynameSource,
+```
+
+View คำนวณค่าเหล่านี้จาก `OagwbgBudgettransfer.Categoryid` แต่เมื่อ `SaveTransferModifyItem` สร้าง `OagwbgBudgettransfer` ใหม่สำหรับ row ที่ 2+ (line 14234):
+
+```csharp
+// ❌ สร้าง BudgetTransfer ใหม่ (idx >= existingHeaders.Count)
+currentHeader = new OagwbgBudgettransfer
+{
+    Departmentid = mainHeader.Departmentid,   // ← copy จาก row แรก
+    Costcenterid = mainHeader.Costcenterid,   // ← copy จาก row แรก
+    Categoryid   = model.CategoryId           // ← null! (ไม่ได้ส่งมาใน btnSave payload)
+};
+```
+
+`model.CategoryId` ไม่ได้ถูกส่งมาจาก frontend (`btnSave` ส่งแค่ `CategoryidGiver`, `CategoryidReciver`) → `Categoryid = null` ใน BudgetTransfer → View lookup ไม่พบ → แสดงเป็น null
+
+**วิธีแก้ — `BudgetService.cs` ~line 14216:**
+```csharp
+// ✅ ใช้ค่าจาก giverItem แทน model/mainHeader
+currentHeader = new OagwbgBudgettransfer
+{
+    Departmentid = giverItem.DepartmentId ?? mainHeader.Departmentid,
+    Costcenterid = giverItem.CostCenterId ?? mainHeader.Costcenterid,
+    Categoryid   = giverItem.CategoryId    // ← ค่าจริงต่อ row
+    // ... ส่วนอื่นเหมือนเดิม
+};
+```
+
+---
+
+### ปัญหา 2 — รหัสงบประมาณ / ประเภทค่าใช้จ่าย ใน TransferIn ไม่แสดง
+
+**Root Cause A — `Budgetcodeid` ไม่ถูก set ตอน Insert J-type record:**
+
+`SaveBudgetReceiveTransferIn` สร้าง `OagwbgBudgetreceive` (J-type) โดยไม่ set `Budgetcodeid` (line 13700-13716):
+```csharp
+var target = new OagwbgBudgetreceive {
+    Budgettransferid = currentHeader.Id,
+    Budgetreceivetype = "J",
+    // ❌ ไม่มี Budgetcodeid = inItem.BudgetCodeDisplay
+};
+```
+Budget code ถูกเก็บใน `OagwbgBudgetreceiverefund.Budgetcodeid` แต่ `GetBudgetAdjustDetail` อ่านจาก `OagwbgBudgetreceive.Budgetcodeid` (line 16918) → null → แสดงเป็น "00000000000000000000"
+
+**Root Cause B — BudgetTypeId/BudgetTypeDisplay ไม่ถูก map ออกมา:**
+
+`GetBudgetAdjustDetail` map J-type items (line 16894-16921) ไม่ได้รวม BudgetTypeId หรือ BudgetTypeDisplay:
+```csharp
+receiveJItems.Add(new TransferInItemViewModel {
+    BudgetCodeDisplay = dBr.Budgetcodeid ?? "00000000000000000000",
+    CategoryDisplay   = dBr.Categoryname,
+    // ❌ ไม่มี BudgetTypeId = ...
+    // ❌ ไม่มี BudgetTypeDisplay = ...
+});
+```
+J-type record ใน `OagwbgBudgetreceive` ไม่มี field สำหรับเก็บ BudgetType เพราะไม่ได้ save ไว้
+
+**วิธีแก้:**
+
+```csharp
+// Fix A — SaveBudgetReceiveTransferIn: เพิ่ม Budgetcodeid ตอน insert
+var target = new OagwbgBudgetreceive {
+    Budgetcodeid = string.IsNullOrWhiteSpace(inItem.BudgetCodeDisplay)
+        ? "00000000000000000000" : inItem.BudgetCodeDisplay,  // ✅
+    ...
+};
+
+// Fix B — GetBudgetAdjustDetail: ดึง BudgetType จาก Category lookup
+var tinCategory = await _context.OagwbgVExtOaginvCategoryCodesVs
+    .FirstOrDefaultAsync(c => c.Id == dBr.Categoryid);
+receiveJItems.Add(new TransferInItemViewModel {
+    BudgetCodeDisplay = dBr.Budgetcodeid ?? "00000000000000000000",
+    BudgetTypeId      = tinCategory?.ExpenseTypeId,     // ✅
+    BudgetTypeDisplay = tinCategory?.ExpenseTypeName,   // ✅
+    ...
+});
+```
+
+---
+
+### ปัญหา 3 — Tab ศูนย์ต้นทุน ไม่โหลดสิ่งที่บันทึกไว้
+
+**Root Cause A — TransferInItems ว่าง:**
+
+`buildAdjustedCostCenterTab()` ใช้ `pageModel.TransferInItems` เป็น source ข้อมูล  
+ถ้า J-type query ใน `GetBudgetAdjustDetail` (line 16880) ยัง query จาก View ที่ไม่มี J-type → `TransferInItems = []` → tab ว่าง (อาการเดียวกับปัญหา Bug 2 ก่อนหน้า)
+
+**Root Cause B — Key Mismatch ตอน load RefundCostCenters:**
+
+`SaveTransferModifyItem` save `RefundCostCenters` ด้วย key `Transferid = mainHeader.Id`:
+```csharp
+// Save: mainHeader = existingHeaders[0] → OagwbgBudgettransfer.Id = BudgetTransfer.Id
+int refTransferId = mainHeader.Id;  // ← BudgetTransfer.Id (e.g., 10)
+newRefundCc.Transferid = refTransferId;
+```
+
+แต่ `GetBudgetAdjustDetail` load ด้วย key `mainHeaderView.Id`:
+```csharp
+// Load: mainHeaderView = OagwbgVBudgettransferChanges.Id = BudgetAdjust.Id (e.g., 20)
+RefundCostCenters = _context.OagwbgBudgetreceiverefundCostcenters
+    .Where(x => x.Transferid == mainHeaderView.Id)  // ← BudgetAdjust.Id ≠ BudgetTransfer.Id
+```
+
+`BudgetTransfer.Id ≠ BudgetAdjust.Id` → ไม่มีผลลัพธ์ → `modelRefundCCs = []` → pre-fill ธนาคารไม่ได้
+
+**วิธีแก้ — `GetBudgetAdjustDetail` ~line 17107:**
+```csharp
+// ✅ ใช้ BudgetTransfer.Id แทน View.Id
+var firstBudgetTransferId = (await _context.OagwbgBudgetadjusts
+    .Where(a => a.Id == mainHeaderView.Id)
+    .Select(a => a.Budgettransferid)
+    .FirstOrDefaultAsync()) ?? mainHeaderView.Id;
+
+RefundCostCenters = _context.OagwbgBudgetreceiverefundCostcenters
+    .Where(x => x.Transferid == firstBudgetTransferId)  // ✅
+    ...
+```
+
+---
+
+### ปัญหา 4 — เพิ่ม TransferOut row ที่ 2 แล้ว Save → ทุก row กลายเป็น row ล่าสุด
+
+**Root Cause:**
+
+`SaveTransferModifyItem` มี block ที่ override ข้อมูลของ `unifiedItems[0]` ด้วยค่า header-level จาก model (line 13900-13909):
+
+```csharp
+if (unifiedItems.Count > 0)
+{
+    var firstGiver = unifiedItems[0];
+    firstGiver.CategoryId  = model.CategoryidGiver ?? firstGiver.CategoryId;   // ❌ BUG
+    firstGiver.PlanId      = model.BudgetPlanId    ?? firstGiver.PlanId;       // ❌ BUG
+    firstGiver.OutputId    = model.ProductId       ?? firstGiver.OutputId;      // ❌ BUG
+    firstGiver.ActivityId  = model.ActivityId      ?? firstGiver.ActivityId;    // ❌ BUG
+    firstGiver.DepartmentId = model.DepartmentId   ?? firstGiver.DepartmentId; // ❌ BUG
+    firstGiver.CostCenterId = model.CostCenterId   ?? firstGiver.CostCenterId; // ❌ BUG
+}
+```
+
+**กลไกที่ทำให้เกิดปัญหา:**
+
+เมื่อผู้ใช้กรอก row 2 ใน Modal แล้วกด "บันทึกรายการ":
+- `model.CategoryidGiver` = row 2's category (non-null) → ชนะ `??` → overwrite `firstGiver.CategoryId`
+- `model.DepartmentId` = row 2's dept (non-null) → overwrite `firstGiver.DepartmentId`
+
+จากนั้นใน foreach loop (idx=0):
+```csharp
+existingAdjust.Categoryid  = giverItem.CategoryId;  // ← row 2's category (ผิด!)
+existingAdjust.Activityid  = giverItem.ActivityId;  // ← row 2's activity (ผิด!)
+existingAdjust.Productid   = giverItem.OutputId;    // ← row 2's product (ผิด!)
+existingAdjust.Departmentid = searchDepartmentid;   // ← row 2's dept (ผิด!)
+```
+
+→ `OagwbgBudgetadjust` ของ row แรกถูกเขียนทับด้วยข้อมูลของ row ล่าสุดทั้งหมด
+
+**วิธีแก้ — ลบ block override ออกทั้งหมด (`BudgetService.cs` ~line 13900-13909):**
+
+```csharp
+// ✅ ลบ block นี้ออก — ข้อมูลแต่ละ row อยู่ใน model.TransferOutItems แล้ว
+// if (unifiedItems.Count > 0)
+// {
+//     var firstGiver = unifiedItems[0];
+//     firstGiver.CategoryId = model.CategoryidGiver ?? firstGiver.CategoryId;
+//     ...
+// }
+```
+
+Block นี้เป็น legacy จากสมัยที่มีแค่ 1 TransferOut row — ปัจจุบัน `unifiedItems` มาจาก `model.TransferOutItems` ซึ่งแต่ละ item มีข้อมูลของตัวเองครบถ้วนอยู่แล้ว
+
+---
+
+### สรุปไฟล์และบรรทัดที่ต้องแก้
+
+| # | ปัญหา | ไฟล์ | บรรทัด | Fix |
+|---|-------|------|--------|-----|
+| 1 | BudgetTransfer ใหม่ (row 2+) ไม่ set Categoryid | `BudgetService.cs` | ~14234 | `Categoryid = giverItem.CategoryId` |
+| 2A | J-type insert ไม่ set Budgetcodeid | `BudgetService.cs` | ~13706 | เพิ่ม `Budgetcodeid = inItem.BudgetCodeDisplay` |
+| 2B | GetBudgetAdjustDetail ไม่ map BudgetTypeId ใน J-items | `BudgetService.cs` | ~16918 | lookup Category → set `BudgetTypeId`/`BudgetTypeDisplay` |
+| 3A | J-type query จาก View (ไม่มี J-type) → TransferInItems empty | `BudgetService.cs` | ~16880 | เปลี่ยนเป็น `OagwbgBudgetreceives` Table |
+| 3B | RefundCostCenters load ด้วย BudgetAdjust.Id แต่ save ด้วย BudgetTransfer.Id | `BudgetService.cs` | ~17107 | resolve BudgetTransfer.Id ก่อน query |
+| 4 | Override `unifiedItems[0]` ด้วยค่าของ row ล่าสุด | `BudgetService.cs` | ~13900-13909 | ลบ block override ออก |
+
 ผู้ใช้สามารถ Confirm ได้โดยไม่เลือกธนาคาร → Oracle Interface อาจ error
