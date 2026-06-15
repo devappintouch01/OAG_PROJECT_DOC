@@ -1268,7 +1268,7 @@ Block นี้เป็น legacy จากสมัยที่มีแค่
 
 ---
 
-## Bug Report: Re-analysis หลัง Dev แก้รอบที่ 2 (2026-06-15)
+## Bug Report: Re-analysis หลังแก้รอบที่ 2 (2026-06-15)
 
 > Dev feedback: ปัญหา 4 (ทุก row กลายเป็น row ล่าสุด) **แก้แล้ว** ✅  
 > ปัญหา 3 (Tab ศูนย์ต้นทุน bank dropdown ว่าง) **ยังไม่ได้**  
