@@ -1429,3 +1429,62 @@ var firstBudgetTransferId = resolvedTransferId ?? mainHeaderView.Id;
 | Item 10 | Backend ไม่ validate ยอดรับโอน ≤ ยอดคงเหลือ | กลาง | Frontend validate แล้ว |
 | Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
 | Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
+
+---
+
+## TFS Changeset #19037 — chore: add GEMINI.md (2026-06-15)
+
+**ไฟล์:** `GEMINI.md` (ใหม่)
+
+Duplicate ของ `CLAUDE.md` สำหรับให้ Gemini AI อ่าน context ของโปรเจกต์
+
+---
+
+## TFS Changeset #19038 — fix: revert invalid Budgetcodeid on OagwbgBudgetreceive (2026-06-15)
+
+**ไฟล์:** `BudgetService.cs`
+
+### สิ่งที่แก้
+
+ลบ `Budgetcodeid = ...` ที่ใส่ไว้ใน `OagwbgBudgetreceive` object ตอน Changeset #19034 ออก
+
+### สาเหตุที่ต้องแก้
+
+`OagwbgBudgetreceive` entity (`OAGBudget.DAL\Models\OagwbgBudgetreceive.cs`) **ไม่มี property `Budgetcodeid`** → build error CS0117
+
+`Budgetcodeid` อยู่ใน `OagwbgBudgetreceiverefund` ซึ่งสร้างทันทีหลัง `OagwbgBudgetreceive` และ **ถูก set ไว้ถูกต้องอยู่แล้ว** (line 13725 ปัจจุบัน):
+```csharp
+var refundLink = new OagwbgBudgetreceiverefund
+{
+    Budgetcodeid = string.IsNullOrWhiteSpace(inItem.BudgetCodeDisplay)
+        ? "00000000000000000000" : inItem.BudgetCodeDisplay,  // ✅ ถูกต้อง
+    ...
+};
+```
+
+### Re-analysis: Issue 2A สถานะจริง
+
+Issue 2A เดิมบอกว่า "J-type insert ไม่ set Budgetcodeid" — วิเคราะห์ใหม่:
+
+| ขั้นตอน | ผล |
+|---------|-----|
+| `SaveBudgetReceiveTransferIn` INSERT `OagwbgBudgetreceive` | ❌ ไม่มี Budgetcodeid column (entity ไม่รองรับ) |
+| `SaveBudgetReceiveTransferIn` INSERT `OagwbgBudgetreceiverefund` | ✅ set `Budgetcodeid` ถูกต้องแล้ว |
+| `GetBudgetAdjustDetail` อ่าน Budgetcodeid จากไหน? | ❓ ต้องตรวจสอบ ~line 16918 |
+
+**สิ่งที่ต้องทำต่อ (Issue 2A):**
+- ตรวจสอบ `GetBudgetAdjustDetail` ~line 16918 ว่าอ่าน `Budgetcodeid` จาก `OagwbgBudgetreceive` หรือ `OagwbgBudgetreceiverefund`
+- ถ้าอ่านจาก `OagwbgBudgetreceive` (entity ไม่มี column) → ต้อง JOIN กับ `OagwbgBudgetreceiverefund` แทน
+
+---
+
+## งานที่เหลือ (อัปเดต 2026-06-15 หลัง #19038)
+
+| # | รายการ | ความยาก | หมายเหตุ |
+|---|--------|---------|----------|
+| Issue 2A | `GetBudgetAdjustDetail` อ่าน `Budgetcodeid` ผิด source | กลาง | ต้อง verify line 16918 → อาจต้อง JOIN `OagwbgBudgetreceiverefund` |
+| Issue 2B | `GetBudgetAdjustDetail` ไม่ map `BudgetTypeId/Display` ใน J-type items | กลาง | ต้อง lookup Category จาก `Categoryid` |
+| Item 7 | Header TransferIn_Edit ใช้ hardcoded text | กลาง | UX issue ไม่ critical |
+| Item 10 | Backend ไม่ validate ยอดรับโอน ≤ ยอดคงเหลือ | กลาง | Frontend validate แล้ว |
+| Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
+| Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
