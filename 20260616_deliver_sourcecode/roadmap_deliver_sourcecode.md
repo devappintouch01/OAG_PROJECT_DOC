@@ -413,6 +413,35 @@ Audit พบ active `console.log` จำนวน **67 บรรทัด** ใ�
 
 ---
 
+### 2026-06-16 — เตรียมไฟล์สำหรับ ZIP
+
+✅ **Copy เรียบร้อย** — `D:\TFS\deliver OAG Budget`
+
+**robocopy command ที่ใช้:**
+```
+robocopy "D:\TFS\OAG Budget" "D:\TFS\deliver OAG Budget" /E
+  /XD bin obj .vs _brain_OAGBUDGET PublishProfiles
+  /XF *.user *.suo .gitignore
+```
+
+**สถิติ:** 4,953 ไฟล์, 352 MB
+
+**ไฟล์/โฟลเดอร์ที่ excluded:**
+
+| สิ่งที่ exclude | เหตุผล |
+|---|---|
+| `bin\`, `obj\` | Build output — ไม่ใช่ source |
+| `_brain_OAGBUDGET\` | Git docs ภายใน ไม่เกี่ยวกับ source |
+| `PublishProfiles\` | Deploy config ส่วนตัว ยังมี server path ภายใน |
+| `.vs\` | Visual Studio local settings |
+| `*.user`, `*.suo` | VS personal settings |
+| `CLAUDE.md`, `GEMINI.md` | AI config ภายใน ลบ manual หลัง copy |
+| `*.vspscc` (7 ไฟล์) | TFS source control binding — Owner ไม่ต้องการ |
+
+**พร้อม ZIP:** `D:\TFS\deliver OAG Budget` → zip ได้เลย
+
+---
+
 ## ข้อสังเกตเพิ่มเติม
 
 - ไฟล์ `_LayoutSignIn.cshtml`, `_LayoutBlank.cshtml`, `_LayoutEmpty.cshtml` เป็น layout อื่นที่อาจต้องเพิ่ม meta tag ด้วยถ้าต้องการครอบคลุมทุกหน้า
