@@ -1488,3 +1488,42 @@ Issue 2A เดิมบอกว่า "J-type insert ไม่ set Budgetcodei
 | Item 10 | Backend ไม่ validate ยอดรับโอน ≤ ยอดคงเหลือ | กลาง | Frontend validate แล้ว |
 | Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
 | Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
+
+---
+
+## Verify Report: DB Query ยืนยัน Issue 2A / 2B / 3A (2026-06-16)
+
+> SQL ที่รัน: `SELECT BUDGETCODEID, BUDGETTYPEID, BUDGETRECEIVETYPE FROM OAGWBG_V_BUDGETRECEIVE WHERE BUDGETRECEIVETYPE = 'J' AND ROWNUM <= 5`
+
+### ผลลัพธ์
+
+| Row | BUDGETCODEID | BUDGETTYPEID | BUDGETRECEIVETYPE |
+|-----|-------------|-------------|-------------------|
+| 1 | 2900614002004100026 | 2125 | J |
+| 2 | 00000000000000000000 | 2125 | J |
+| 3 | 2900614002004100026 : ค่าใช้จ่ายบุคลากร | 2125 | J |
+| 4 | 2900614002004100026 | 2125 | J |
+| 5 | 2900614002004100026 | 2125 | J |
+
+### สรุป
+
+| Issue | สถานะใหม่ | หลักฐาน |
+|-------|-----------|---------|
+| **3A** — View ไม่มี J-type records | ✅ CLOSED | View คืน rows ที่ `BUDGETRECEIVETYPE = 'J'` ได้ปกติ |
+| **2B** — ไม่มี `BUDGETTYPEID` ใน J-type | ✅ CLOSED | ทุก row มี `BUDGETTYPEID = 2125` |
+| **2A** — ไม่มี `BUDGETCODEID` ใน J-type | ✅ CLOSED | ทุก row มี `BUDGETCODEID` (ส่วนใหญ่ถูกต้อง) |
+
+**ข้อสังเกต Row 3:** `BUDGETCODEID = "2900614002004100026 : ค่าใช้จ่ายบุคลากร"` — ดูเหมือน data เก่าที่ถูก insert ค่าผิดรูปแบบ (concat กับชื่อ category) ไม่ใช่ปัญหาของ code ปัจจุบัน
+
+**Row 2 (`00000000000000000000`)** — เป็น fallback value ที่ set ตอน Insert เมื่อ BudgetCodeDisplay ว่าง ถือว่าถูกต้องตาม logic
+
+---
+
+## งานที่เหลือ (อัปเดต 2026-06-16 หลัง DB verify)
+
+| # | รายการ | ความยาก | หมายเหตุ |
+|---|--------|---------|----------|
+| Item 7 | Header TransferIn_Edit ใช้ hardcoded text | กลาง | UX issue ไม่ critical |
+| Item 10 | Backend ไม่ validate ยอดรับโอน ≤ ยอดคงเหลือ | กลาง | Frontend validate แล้ว |
+| Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
+| Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
