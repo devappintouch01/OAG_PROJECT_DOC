@@ -191,6 +191,13 @@ app.Use(async (context, next) =>
 - **Program.cs route `moenerp/`** — ✅ ลบแล้ว (ลบ projecttracking route block ทั้งหมด)
 - **PublishProfiles MOENERP path** — ✅ แก้แล้ว (เปลี่ยนเป็น OAGBudget)
 - **AuthenService.cs GetAuthTokenAsync / AuthenController.cs AuthEnergySignIn** — ✅ ลบแล้ว (Changeset #19045)
+- **Cookie.Name DTNBOOKINGCookieAuth** — ✅ แก้แล้ว → `OAGBUDGETCookieAuth` (Changeset #19049)
+- **JwtConfig.Issuer mone.com** — ✅ แก้แล้ว → `oagbudget.com` (Changeset #19049)
+- **BaseUrl/BaseUrlApi/BaseUrlERP DTNBOOKING/DTNERP** — ✅ แก้แล้ว → placeholder `YOUR_SERVER` (Changeset #19049)
+- **MailSettings DTN** — ✅ ลบแล้ว (Changeset #19048)
+- **IntranetUrl dtn.go.th** — ✅ ลบแล้ว (Changeset #19048)
+- **OAGLOGSContext DI + connection string** — ✅ ลบแล้ว ไม่มีใช้จริง (Changeset #19049)
+- **eKey DTN-ERP.2020** — ✅ แก้แล้ว → `OAGWBG.2025` (Changeset #19050) ตรวจสอบแล้วว่าไม่มี password ใน DB
 
 ---
 
@@ -346,7 +353,7 @@ Audit พบ active `console.log` จำนวน **67 บรรทัด** ใ�
 
 ---
 
-### 2026-06-16 — กำจัด MOEN references ที่เหลือ (ยังไม่ได้ checkin)
+### 2026-06-16 — กำจัด MOEN references ที่เหลือ (Changeset #19047)
 
 ✅ **Build ผ่าน 0 Error** — รอ checkin
 
@@ -361,6 +368,27 @@ Audit พบ active `console.log` จำนวน **67 บรรทัด** ใ�
 **PublishProfiles — เปลี่ยน MOENERP → OAGBudget:**
 - `FolderProfile1.pubxml`: `D:\Publish\MOENERP\web` → `D:\Publish\OAGBudget\web`
 - `Deploay_Jaida.pubxml`: `\\jaida\Web Application\MOENERP\_web` → `\\jaida\Web Application\OAGBudget\_web`
+
+---
+
+### 2026-06-16 — กำจัด DTN references (Changeset #19048, #19049, #19050)
+
+✅ **Checkin เรียบร้อย**
+
+| สิ่งที่แก้ | ไฟล์ | Changeset |
+|---|---|---|
+| ลบ MailSettings (mail.dtn.go.th) | appsettings.json + appsettings.Development.json (API) | #19048 |
+| ลบ IntranetUrl (intranet.dtn.go.th) | appsettings.json, appsettings.Development.json (MVC), SettingsModel.cs | #19048 |
+| ลบ commented DTNERP connection strings | appsettings.Development.json (API) | #19048 |
+| ลบ MOEN-ERP - Backup.Global.csproj | OAGBudget.Global | #19048 |
+| Cookie.Name → `OAGBUDGETCookieAuth` | OAGBudget\Program.cs | #19049 |
+| JwtConfig.Issuer → `https://www.oagbudget.com` | appsettings.json + Development (API) | #19049 |
+| BaseUrl/BaseUrlApi/BaseUrlERP → `YOUR_SERVER` placeholder | OAGBudget\appsettings.json | #19049 |
+| ลบ OAGLOGSContext DI registration | OAGBudget.API\Program.cs | #19049 |
+| ลบ OAGLOGSContext connection string | OAGBudget.API\appsettings.json | #19049 |
+| eKey → `OAGWBG.2025` | OAGBudget.API\Services\Repository\AuthenService.cs | #19050 |
+
+**หมายเหตุ eKey:** ตรวจสอบ PREPROD DB แล้ว — มี user 719 คน แต่ไม่มี password ใน DB (login ผ่าน SSO ทั้งหมด) จึงเปลี่ยน eKey ได้อย่างปลอดภัย
 
 ---
 
