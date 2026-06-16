@@ -421,7 +421,7 @@ Audit พบ active `console.log` จำนวน **67 บรรทัด** ใ�
 ```
 robocopy "D:\TFS\OAG Budget" "D:\TFS\deliver OAG Budget" /E
   /XD bin obj .vs _brain_OAGBUDGET PublishProfiles
-  /XF *.user *.suo .gitignore CLAUDE.md GEMINI.md
+  /XF *.user *.suo .gitignore *.vspscc CLAUDE.md GEMINI.md
 ```
 
 **สถิติ:** 4,953 ไฟล์, 352 MB
@@ -435,6 +435,7 @@ robocopy "D:\TFS\OAG Budget" "D:\TFS\deliver OAG Budget" /E
 | `PublishProfiles\` | Deploy config ส่วนตัว ยังมี server path ภายใน |
 | `.vs\` | Visual Studio local settings |
 | `*.user`, `*.suo` | VS personal settings |
+| `*.vspscc` (7 ไฟล์) | TFS source control binding — Owner ไม่ต้องการ |
 | `CLAUDE.md`, `GEMINI.md` | AI config ภายใน — exclude ด้วย `/XF` ตอน robocopy |
 
 **พร้อม ZIP:** `D:\TFS\deliver OAG Budget` → zip ได้เลย
