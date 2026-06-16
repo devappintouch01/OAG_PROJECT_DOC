@@ -187,9 +187,10 @@ app.Use(async (context, next) =>
 - **Rename MOEN → OAG DbContext** ✅ — 2026-06-16 (Changeset ดูใน TFS history)
 - **ลบ Keycloak dead code** ✅ — 2026-06-16 (Changeset #19044)
 - **ลบ OPM-BackOffice.Reports** ✅ — 2026-06-16 (Changeset #19044)
-- **FlowService.cs hardcoded MOENDB credentials** — ⚠️ ยังเหลือ (DI commented out — likely dead code)
-- **Program.cs route `moenerp/`** — ⚠️ ยังเหลือ
-- **AuthenService.cs GetAuthTokenAsync / AuthenController.cs AuthEnergySignIn** — ⚠️ ยังเหลือ (references auth.energy.go.th)
+- **FlowService.cs hardcoded MOENDB credentials** — ✅ ลบแล้ว (ลบ connectionString 2 บรรทัด)
+- **Program.cs route `moenerp/`** — ✅ ลบแล้ว (ลบ projecttracking route block ทั้งหมด)
+- **PublishProfiles MOENERP path** — ✅ แก้แล้ว (เปลี่ยนเป็น OAGBudget)
+- **AuthenService.cs GetAuthTokenAsync / AuthenController.cs AuthEnergySignIn** — ✅ ลบแล้ว (Changeset #19045)
 
 ---
 
@@ -235,10 +236,10 @@ app.Use(async (context, next) =>
 | ~~`AuthenController.cs:293`~~ | ~~`KEYCLOAK_CLIENT_ID = "MOEN-ERP"` (constant)~~ | ✅ ลบแล้ว — Changeset #19044 |
 | ~~`AuthenController.cs:297`~~ | ~~`REDIRECT_URI` ชี้ไป `164.115.26.147/moenerp` (constant)~~ | ✅ ลบแล้ว — Changeset #19044 |
 | ~~`AuthenService.cs:186`~~ | ~~`KeyCloakSignInAsync` method + `redirect_uri MOENERP`~~ | ✅ ลบแล้ว — Changeset #19044 |
-| `AuthenController.cs:45` | `AuthEnergySignIn` action เรียก `GetAuthTokenAsync` | ⚠️ ยังเหลือ — ลบทิ้งได้ถ้าไม่ได้ใช้ |
-| `AuthenService.cs:127` | `GetAuthTokenAsync` ชี้ไป `auth.energy.go.th` + client_secret MOEN | ⚠️ ยังเหลือ — ลบทิ้งได้ถ้าไม่ได้ใช้ |
-| `Program.cs:212` | Route pattern `moenerp/{controller=...}` | ⚠️ ยังเหลือ — ต้องรู้ว่า OAG ใช้ route อะไร |
-| `FlowService.cs:28,125` | Hardcoded credentials `MOENDB` | ⚠️ ยังเหลือ — DI commented out (likely dead code) |
+| ~~`AuthenController.cs:45`~~ | ~~`AuthEnergySignIn` action เรียก `GetAuthTokenAsync`~~ | ✅ ลบแล้ว — Changeset #19045 |
+| ~~`AuthenService.cs:127`~~ | ~~`GetAuthTokenAsync` ชี้ไป `auth.energy.go.th` + client_secret~~ | ✅ ลบแล้ว — Changeset #19045 |
+| ~~`Program.cs:212`~~ | ~~Route pattern `moenerp/{controller=...}`~~ | ✅ ลบแล้ว — ลบทั้ง block (ใช้ default route แทน) |
+| ~~`FlowService.cs:28,125`~~ | ~~Hardcoded credentials `MOENDB`~~ | ✅ ลบแล้ว — ลบ 2 บรรทัด connectionString |
 | ~~`OAGDOCSContextBase.cs`~~ | ~~Hardcoded `MOENDOCS` + password~~ | ✅ แก้แล้ว — ลบ `OnConfiguring` ออก |
 | ~~`OAGLOGSContextBase.cs`~~ | ~~Hardcoded `MOENLOGS` + password~~ | ✅ แก้แล้ว — ลบ `OnConfiguring` ออก |
 
@@ -342,6 +343,24 @@ Audit พบ active `console.log` จำนวน **67 บรรทัด** ใ�
 - เนื้อหาไม่เกี่ยวข้องกับ OAGBudget
 
 **วิธีที่ใช้:** `tf delete "D:\TFS\OAG Budget\OPM-BackOffice.Reports" /recursive`
+
+---
+
+### 2026-06-16 — กำจัด MOEN references ที่เหลือ (ยังไม่ได้ checkin)
+
+✅ **Build ผ่าน 0 Error** — รอ checkin
+
+**Program.cs — ลบ `projecttracking` route:**
+- ลบ `MapControllerRoute` block ที่มี pattern `moenerp/{controller=ProjectTracking}/...` ออกทั้ง block
+- เหตุผล: ไม่มี view ใด hardcode URL `/moenerp/...` — `ProjectTracking` controller ยังเข้าถึงได้ผ่าน default route
+
+**FlowService.cs — ลบ hardcoded connectionString:**
+- ลบ `string connectionString = "Data Source=dev.softsuite.co.th; Initial Catalog=MOENDB; ..."` 2 บรรทัด (lines 28 และ 125)
+- ตัวแปรนี้ไม่ได้ถูกใช้ (SQL code ข้างล่างถูก comment ออกทั้งหมด, DI ก็ comment ออก)
+
+**PublishProfiles — เปลี่ยน MOENERP → OAGBudget:**
+- `FolderProfile1.pubxml`: `D:\Publish\MOENERP\web` → `D:\Publish\OAGBudget\web`
+- `Deploay_Jaida.pubxml`: `\\jaida\Web Application\MOENERP\_web` → `\\jaida\Web Application\OAGBudget\_web`
 
 ---
 
