@@ -435,8 +435,7 @@ robocopy "D:\TFS\OAG Budget" "D:\TFS\deliver OAG Budget" /E
 | `PublishProfiles\` | Deploy config ส่วนตัว ยังมี server path ภายใน |
 | `.vs\` | Visual Studio local settings |
 | `*.user`, `*.suo` | VS personal settings |
-| `CLAUDE.md`, `GEMINI.md` | AI config ภายใน ลบ manual หลัง copy |
-| `*.vspscc` (7 ไฟล์) | TFS source control binding — Owner ไม่ต้องการ |
+| `CLAUDE.md`, `GEMINI.md` | AI config ภายใน — ลบ manual หลัง copy |
 
 **พร้อม ZIP:** `D:\TFS\deliver OAG Budget` → zip ได้เลย
 
