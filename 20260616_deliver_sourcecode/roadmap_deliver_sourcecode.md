@@ -198,6 +198,8 @@ app.Use(async (context, next) =>
 - **IntranetUrl dtn.go.th** — ✅ ลบแล้ว (Changeset #19048)
 - **OAGLOGSContext DI + connection string** — ✅ ลบแล้ว ไม่มีใช้จริง (Changeset #19049)
 - **eKey DTN-ERP.2020** — ✅ แก้แล้ว → `OAGWBG.2025` (Changeset #19050) ตรวจสอบแล้วว่าไม่มี password ใน DB
+- **OAGDBContextBase.cs hardcoded connection string** — ✅ ลบแล้ว (Changeset #19051)
+- **OAGDOCSContext connection string dev.softsuite.co.th** — ✅ แก้แล้ว → placeholder `YOUR_SERVER` (Changeset #19051)
 
 ---
 
@@ -389,6 +391,25 @@ Audit พบ active `console.log` จำนวน **67 บรรทัด** ใ�
 | eKey → `OAGWBG.2025` | OAGBudget.API\Services\Repository\AuthenService.cs | #19050 |
 
 **หมายเหตุ eKey:** ตรวจสอบ PREPROD DB แล้ว — มี user 719 คน แต่ไม่มี password ใน DB (login ผ่าน SSO ทั้งหมด) จึงเปลี่ยน eKey ได้อย่างปลอดภัย
+
+---
+
+### 2026-06-16 — กำจัด softsuite dev server references (Changeset #19051)
+
+✅ **Checkin เรียบร้อย**
+
+| สิ่งที่แก้ | ไฟล์ |
+|---|---|
+| ลบ `OnConfiguring` block + hardcoded `dev.softsuite.co.th` connection string | `OAGBudget.DAL\Models\OAGDBContextBase.cs` |
+| เปลี่ยน `OAGDOCSContext` → placeholder `YOUR_SERVER` | `OAGBudget.API\appsettings.json` |
+
+---
+
+### หมายเหตุ PublishProfiles
+
+ไม่ควร zip ไฟล์ใน `Properties\PublishProfiles\` ของทั้ง 2 project:
+- `OAGBudget\Properties\PublishProfiles\` — deploy config ส่วนตัว
+- `OAGBudget.API\Properties\PublishProfiles\` — deploy config ส่วนตัว (ยังมี MOENERP path อยู่)
 
 ---
 
