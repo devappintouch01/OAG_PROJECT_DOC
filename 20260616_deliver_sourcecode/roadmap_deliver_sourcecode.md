@@ -182,7 +182,7 @@ app.Use(async (context, next) =>
 
 ## สถานะปัจจุบัน
 
-- **HTTP Response Header middleware** — ยังไม่ implement (รอ zip ส่งมอบให้เสร็จก่อน — จะเพิ่มหลังส่ง ZIP)
+- **HTTP Response Header middleware** — ✅ implement แล้ว (Changeset #19064) — เพิ่มหลังส่ง ZIP แล้ว
 - **ลบ `console.log` ทั้งหมดแล้ว** ✅ — 2026-06-16 (Changeset ดูใน TFS history)
 - **Rename MOEN → OAG DbContext** ✅ — 2026-06-16 (Changeset ดูใน TFS history)
 - **ลบ Keycloak dead code** ✅ — 2026-06-16 (Changeset #19044)
@@ -439,6 +439,35 @@ robocopy "D:\TFS\OAG Budget" "D:\TFS\deliver OAG Budget" /E
 | `CLAUDE.md`, `GEMINI.md` | AI config ภายใน — exclude ด้วย `/XF` ตอน robocopy |
 
 **พร้อม ZIP:** `D:\TFS\deliver OAG Budget` → zip ได้เลย
+
+---
+
+### 2026-06-17 — เพิ่ม HTTP Response Header Warranty Markers (Changeset #19064)
+
+✅ **Checkin เรียบร้อย** — Changeset #19064
+
+เพิ่ม middleware ใน 2 ไฟล์ **หลังส่ง ZIP ให้ Owner แล้ว** — ทำให้ ZIP ที่ Owner ได้รับไม่มี marker นี้
+
+| ไฟล์ | Header | ค่า |
+|---|---|---|
+| `OAGBudget\Program.cs` | `X-App-Build` | `OAGBudget` |
+| `OAGBudget\Program.cs` | `X-License` | `Licensed to OAG.` |
+| `OAGBudget.API\Program.cs` | `X-App-Build` | `OAGBudget-API` |
+| `OAGBudget.API\Program.cs` | `X-License` | `Licensed to OAG.` |
+
+**วิธีตรวจสอบ:** DevTools → Network → Response Headers → หา `X-License`
+- ระบบที่ deploy จาก TFS ของเรา → **มี header**
+- ระบบที่ Owner deploy จาก ZIP → **ไม่มี header** → พิสูจน์ว่า deploy เอง
+
+---
+
+### 2026-06-17 — แก้ Build Error หลัง tf get (Changeset #19063)
+
+✅ **Checkin เรียบร้อย** — Changeset #19063
+
+หลัง `tf get` ได้ `_tableBudgetOverlapYearCentralAllocateList.cshtml` เวอร์ชันใหม่ที่ใช้ property `TransferDate` แต่ `OagwbgVBudgetreceive` model ไม่มี — build error CS1061
+
+**แก้:** เพิ่ม `[NotMapped] public DateTime? TransferDate { get; set; }` ใน `OAGBudget.DAL\Models\OagwbgVBudgetreceive.cs`
 
 ---
 
