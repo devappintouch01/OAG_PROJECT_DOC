@@ -1527,3 +1527,36 @@ Issue 2A เดิมบอกว่า "J-type insert ไม่ set Budgetcodei
 | Item 10 | Backend ไม่ validate ยอดรับโอน ≤ ยอดคงเหลือ | กลาง | Frontend validate แล้ว |
 | Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
 | Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
+
+---
+
+## Verify Report: Items 1–14 ✅ CLOSED (2026-06-17)
+
+> Dev แจ้งว่า Items 1–14 เสร็จสมบูรณ์แล้ว  
+> Verify จาก source code + clarification จาก dev
+
+### ผลการ Verify
+
+| Item | ชื่อ | สถานะ | หมายเหตุ |
+|------|------|--------|----------|
+| 1 | เลือกปีงบ + ประเภทหน่วย | ✅ | |
+| 2 | กรอกวันที่ + คำอธิบาย + เหตุผล | ✅ | |
+| 3 | Modal เพิ่มรายการโอนออก | ✅ | |
+| 4 | เช็คงบ | ✅ | |
+| 5 | บันทึกรายการ → ตาราง | ✅ | ยอดโอนออกเป็น `<div>` by design — รับค่าจากยอดรวมรับโอน ไม่ใช่ user input |
+| 6 | ปุ่มแก้ไขหลังบันทึก | ✅ | |
+| 7 | Header TransferIn_Edit | ✅ | hardcoded by design — JS populate จาก transfer-out row เพื่อแสดงข้อมูลโอนออก |
+| 8 | Modal เพิ่มรายการรับโอน | ✅ | |
+| 9 | Collapse/Expand All | ✅ | มี handler ครบทั้ง `#btn-CollapseAllTransferIn` และ `#btn-ExpandAllTransferIn` |
+| 10 | validate ยอดรับโอน | ✅ | Oracle EBS ตัดยอดทีละแถวเอง — backend validate ไม่จำเป็น |
+| 11 | บันทึกรายการรับโอน | ✅ | Delete filter + INSERT ใช้ `Budgetadjustid`; payload.Id ใช้ `transferOutIdParam` (BudgetAdjust.Id) |
+| 12 | Tab ศูนย์ต้นทุน | ✅ | อ่านจาก TransferInItems แต่ละ item; bank dropdown dynamic |
+| 13 | Confirm ส่ง RefundCostCenters | ✅ | เก็บ giver-bank + receiver-bank ครบ ส่งใน payload |
+| 14 | Validate ธนาคารก่อน Confirm | ✅ | มี alert + is-invalid เมื่อเลือกไม่ครบ |
+
+### งานที่เหลือ (หลังปิด Items 1–14)
+
+| # | รายการ | ความยาก | หมายเหตุ |
+|---|--------|---------|----------|
+| Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
+| Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
