@@ -442,9 +442,10 @@ robocopy "D:\TFS\OAG Budget" "D:\TFS\deliver OAG Budget" /E
 
 ---
 
-### 2026-06-17 — เพิ่ม HTTP Response Header Warranty Markers (Changeset #19064)
+### 2026-06-17 — เพิ่ม HTTP Response Header Warranty Markers (Changeset #19064, #19068)
 
-✅ **Checkin เรียบร้อย** — Changeset #19064
+✅ **Checkin เรียบร้อย** — Changeset #19064, #19068  
+✅ **Verified บน PREPROD และ PROD แล้ว** — 2026-06-17
 
 เพิ่ม middleware ใน 2 ไฟล์ **หลังส่ง ZIP ให้ Owner แล้ว** — ทำให้ ZIP ที่ Owner ได้รับไม่มี marker นี้
 
@@ -454,6 +455,15 @@ robocopy "D:\TFS\OAG Budget" "D:\TFS\deliver OAG Budget" /E
 | `OAGBudget\Program.cs` | `X-License` | `Licensed to OAG.` |
 | `OAGBudget.API\Program.cs` | `X-App-Build` | `OAGBudget-API` |
 | `OAGBudget.API\Program.cs` | `X-License` | `Licensed to OAG.` |
+
+**หมายเหตุ Changeset #19068:** แก้ bug ordering — middleware ต้องวางก่อน `app.UseEndpoints()` มิฉะนั้น `OnStarting` callback จะไม่ถูก register สำหรับ endpoint-matched requests
+
+**Verification (2026-06-17):**
+
+| ระบบ | URL | X-App-Build | X-License |
+|---|---|---|---|
+| PREPROD | `172.16.11.52/OAGWBG/` | `OAGBudget` ✅ | `Licensed to OAG.` ✅ |
+| PROD | `budgeting.ago.go.th` | `OAGBudget` ✅ | `Licensed to OAG.` ✅ |
 
 **วิธีตรวจสอบ:** DevTools → Network → Response Headers → หา `X-License`
 - ระบบที่ deploy จาก TFS ของเรา → **มี header**
