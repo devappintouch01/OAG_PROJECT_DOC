@@ -1885,3 +1885,72 @@ WHERE br.BUDGETRECEIVETYPE = 'J';
 5. Item 15  (ยาก, function ใหม่)
 6. Item 16  (ยาก, DDL + verify กับ Oracle DBA)
 ```
+
+---
+
+## B1 Deep Analysis — แผนงาน/ผลิต/กิจกรรม/ประเภทฯ หายหลัง Confirm (2026-06-18)
+
+### Root Cause หลัก — `sourceFund` กลายเป็น null หลัง Confirm
+
+**[BudgetService.cs:17343]** query `sourceFund` จาก View `OAGWBG_V_BUDGETRECEIVE`:
+
+```csharp
+var sourceFund = await _context.OagwbgVBudgetreceives.FirstOrDefaultAsync(x =>
+    x.Departmentid == adj.Departmentid &&
+    x.Costcenterid == adj.Costcenterid &&
+    x.Categoryid  == adj.Categoryid &&
+    x.Budgetsourceid == adj.Budgetsourceid &&
+    x.Budgetyear == adj.Budgetyear &&
+    x.Budgetreceivetype != "J");
+```
+
+หลัง `ConfirmBudgetTransferAdjust` สำเร็จ → Oracle EBS ประมวลผล interface → **ตัดยอด `TOTALBALANCEAMOUNT`** ของ source fund — ถ้า View `OAGWBG_V_BUDGETRECEIVE` มีเงื่อนไข `WHERE TOTALBALANCEAMOUNT > 0` หรือกรองตาม status → **`sourceFund` = null**
+
+### Chain failure
+
+| Field ที่หาย | Code path | ผลเมื่อ sourceFund = null |
+|---|---|---|
+| แผนงาน `PlanText` | `fallbackPlan?.Name ?? sourceFund?.Planname ?? header.Plannanme` | ใช้ `fallbackPlan` (จาก ext view) |
+| ผลผลิต `OutputText` | `fallbackProduct?.Name ?? sourceFund?.Productname ?? header.Productname` | `fallbackProduct` อาจ null ถ้า `adj.Productid = "00000"` |
+| กิจกรรม `ActivityText` | `fallbackActivity?.ActivityName ?? sourceFund?.Activityname ?? header.Activityname` | `fallbackActivity` อาจ null เช่นกัน |
+| ประเภทค่าใช้จ่าย `BudgetTypeDisplay` | `header.BudgettypenameSource` | ขึ้นกับ `OAGWBG_V_BUDGETTRANSFER_CHANGES` มี column นี้ไหม |
+| รายการงบประมาณ `CategoryDisplay` | `fallbackCategory?.Name ?? sourceFund?.Categoryname ?? header.CategorynameSource` | ใช้ `fallbackCategory` — น่าจะยังมี |
+
+### จุดที่ต้องตรวจสอบก่อน Implement
+
+**1. ดู DDL ของ View `OAGWBG_V_BUDGETRECEIVE`** (ต้อง VPN — F5 BIG-IP Edge Client):
+```sql
+SELECT TEXT FROM ALL_VIEWS WHERE VIEW_NAME = 'OAGWBG_V_BUDGETRECEIVE';
+```
+→ ถ้ามี `WHERE TOTALBALANCEAMOUNT > 0` หรือ `WHERE BUDGETRECEIVESTATUS != '80201'` = confirmed root cause
+
+**2. ตรวจสอบ `OagwbgVBudgettransferChange.cs`** ว่ามี property `Plannanme`, `Productname`, `Activityname`, `BudgettypenameSource` ไหม
+
+### แนวทางแก้
+
+**[BudgetService.cs:17343]** เปลี่ยน `sourceFund` ให้ query จาก **Table** แทน View:
+
+```csharp
+// ❌ เดิม: View อาจ filter record ออกหลัง Oracle ตัดยอด
+var sourceFund = await _context.OagwbgVBudgetreceives.FirstOrDefaultAsync(x => ...);
+
+// ✅ แก้: ใช้ Table โดยตรง — ไม่ขึ้นกับ balance/status filter
+var sourceFundRaw = await _context.OagwbgBudgetreceives.FirstOrDefaultAsync(x =>
+    x.Departmentid == adj.Departmentid &&
+    x.Costcenterid == adj.Costcenterid &&
+    x.Categoryid   == adj.Categoryid &&
+    x.Budgetsourceid == adj.Budgetsourceid &&
+    x.Budgetyear   == adj.Budgetyear &&
+    x.Budgetreceivetype != "J");
+```
+
+> ⚠️ Table ไม่มี computed names (`Planname`, `Productname`, etc.) → ต้อง lookup ชื่อแยกจาก ext views เหมือน pattern ที่ line 17418–17435 (TransferIn items)
+
+### ลำดับการ Fix
+
+```
+1. ยืนยัน root cause: รัน SQL ดู View DDL บน PREPROD (ต้อง VPN)
+2. แก้ sourceFund ให้ query จาก Table แทน View
+3. เพิ่ม lookup ชื่อ Plan/Product/Activity จาก ext views
+4. Build + Test
+```
