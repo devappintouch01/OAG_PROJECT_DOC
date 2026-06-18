@@ -1872,18 +1872,15 @@ WHERE br.BUDGETRECEIVETYPE = 'J';
 
 | # | งาน | ไฟล์ | แนวทาง | สถานะ |
 |---|-----|------|--------|-------|
-| Item 15 | `SaveBudgetAdjustEncumbrance()` — ส่ง interface Encumbrance ขาโอนออก | `BudgetService.cs` (ใหม่) + `BudgetController.cs` API | loop BUDGETADJUST → BUDGETRECEIVE type=J → INSERT OAGWBG_LOG_INTERFACE (DR, ActualFlag=E, Giver segments, ยอด=TransferIn.Totalreceiveamount) | ⬜ รอ |
-| Item 16 | DDL View `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` | Oracle DB (script .sql) | UNION ALL: CR จาก BUDGETADJUST + DR จาก BUDGETRECEIVE type=J, JOIN ExpenseRule สำหรับ Seg5/8/10/11 | ⬜ รอ |
+| Item 15 | `SaveBudgetAdjustEncumbrance()` — ส่ง interface Encumbrance ขาโอนออก | `BudgetService.cs` | Implemented inside `ConfirmBudgetTransferAdjust()` แล้ว — Giver loop line ~16167, ActualFlag=E, EnteredDr=Totaltransferamount | ✅ Done (bundled ใน ConfirmBudgetTransferAdjust, verify 2026-06-18) |
+| Item 16 | DDL View `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` | `20260609_115v3/OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE.sql` | อ่านจาก OAGWBG_LOG_INTERFACE WHERE TRANSFER_TYPE='ADJUSTMENT' AND ACTION_NAME='SaveBudgetAdjust', LEFT JOIN OAGWBG_BUDGETTRANSFER ผ่าน ATTRIBUTE3 | 🔄 Script พร้อม — รอ deploy บน Oracle |
 
-### ลำดับที่แนะนำ (อัปเดต 2026-06-18 17:44)
+### ลำดับที่แนะนำ (อัปเดต 2026-06-18)
 
 ```
-1. B3  (ง่าย — modal clear, กระทบ data integrity)
-2. B7  (รอ checkin จาก dev)
-3. B1  (dev กำลัง test)
-4. B5  (display only, low priority)
-5. Item 15  (ยาก, function ใหม่)
-6. Item 16  (ยาก, DDL + verify กับ Oracle DBA)
+1. B7  (รอ checkin จาก dev)
+2. B5  (display only, low priority)
+3. Item 16  (deploy SQL script บน Oracle — 1 คำสั่ง)
 ```
 
 ---
