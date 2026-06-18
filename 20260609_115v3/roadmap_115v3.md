@@ -1890,67 +1890,85 @@ WHERE br.BUDGETRECEIVETYPE = 'J';
 
 ## B1 Deep Analysis — แผนงาน/ผลิต/กิจกรรม/ประเภทฯ หายหลัง Confirm (2026-06-18)
 
-### Root Cause หลัก — `sourceFund` กลายเป็น null หลัง Confirm
+### ผล SQL Verification บน PREPROD (2026-06-18 — ยืนยันแล้ว)
 
-**[BudgetService.cs:17343]** query `sourceFund` จาก View `OAGWBG_V_BUDGETRECEIVE`:
+รัน query ผ่าน Python + oracledb thick mode (Oracle Instant Client 19c) บน PREPROD:
+- `SELECT TEXT FROM ALL_VIEWS WHERE VIEW_NAME = 'OAGWBG_V_BUDGETRECEIVE'` → ได้ DDL เต็ม
+- `SELECT COUNT(*), COUNT(CATEGORYID), COUNT(PRODUCTID)... FROM OAGWBG_BUDGETRECEIVE WHERE BUDGETRECEIVETYPE = 'J'` → ยืนยัน root cause
 
-```csharp
-var sourceFund = await _context.OagwbgVBudgetreceives.FirstOrDefaultAsync(x =>
-    x.Departmentid == adj.Departmentid &&
-    x.Costcenterid == adj.Costcenterid &&
-    x.Categoryid  == adj.Categoryid &&
-    x.Budgetsourceid == adj.Budgetsourceid &&
-    x.Budgetyear == adj.Budgetyear &&
-    x.Budgetreceivetype != "J");
+---
+
+### Root Cause จริง — J-type records ไม่มี CATEGORYID หลัง Confirm
+
+View `OAGWBG_V_BUDGETRECEIVE` **ไม่มี** `WHERE TOTALBALANCEAMOUNT > 0` และไม่มี status filter ใดๆ — SELECT ตรงจาก table โดยไม่กรอง
+
+สาเหตุที่แท้จริงคือ **J-type records ใน `OAGWBG_BUDGETRECEIVE` ไม่มี `CATEGORYID`** หลัง Confirm:
+
+```
+J-type records (sample 1000):
+  total            = 69
+  with CATEGORYID  = 44  ← 25 records ขาด CATEGORYID
+  with PRODUCTID   = 57
+  with ACTIVITYID  = 57
+
+Latest 5 J-type records:
+  ID=41537  ADJID=124  CATID=null  STATUS=80201 (Confirmed) ← CATEGORYID หาย
+  ID=41536  ADJID=120  CATID=null  STATUS=80201 (Confirmed) ← CATEGORYID หาย
+  ID=41531  ADJID=123  CATID=null  STATUS=80201 (Confirmed) ← CATEGORYID หาย
+  ID=41518  ADJID=119  CATID=15130 STATUS=80101 (Pre-confirm) ← ยังมี
+  ID=41517  ADJID=118  CATID=5127  STATUS=80101 (Pre-confirm) ← ยังมี
 ```
 
-หลัง `ConfirmBudgetTransferAdjust` สำเร็จ → Oracle EBS ประมวลผล interface → **ตัดยอด `TOTALBALANCEAMOUNT`** ของ source fund — ถ้า View `OAGWBG_V_BUDGETRECEIVE` มีเงื่อนไข `WHERE TOTALBALANCEAMOUNT > 0` หรือกรองตาม status → **`sourceFund` = null**
+ทุก record ที่ status `80201` (หลัง Confirm) มี `CATEGORYID = null`
 
-### Chain failure
+### Chain failure ใน View
 
-| Field ที่หาย | Code path | ผลเมื่อ sourceFund = null |
-|---|---|---|
-| แผนงาน `PlanText` | `fallbackPlan?.Name ?? sourceFund?.Planname ?? header.Plannanme` | ใช้ `fallbackPlan` (จาก ext view) |
-| ผลผลิต `OutputText` | `fallbackProduct?.Name ?? sourceFund?.Productname ?? header.Productname` | `fallbackProduct` อาจ null ถ้า `adj.Productid = "00000"` |
-| กิจกรรม `ActivityText` | `fallbackActivity?.ActivityName ?? sourceFund?.Activityname ?? header.Activityname` | `fallbackActivity` อาจ null เช่นกัน |
-| ประเภทค่าใช้จ่าย `BudgetTypeDisplay` | `header.BudgettypenameSource` | ขึ้นกับ `OAGWBG_V_BUDGETTRANSFER_CHANGES` มี column นี้ไหม |
-| รายการงบประมาณ `CategoryDisplay` | `fallbackCategory?.Name ?? sourceFund?.Categoryname ?? header.CategorynameSource` | ใช้ `fallbackCategory` — น่าจะยังมี |
+View ใช้ JOIN chain: `BR.CATEGORYID → EXTCC → BCP (Plan) → VPROD (Product) → VACT (Activity)`
 
-### จุดที่ต้องตรวจสอบก่อน Implement
-
-**1. ดู DDL ของ View `OAGWBG_V_BUDGETRECEIVE`** (ต้อง VPN — F5 BIG-IP Edge Client):
 ```sql
-SELECT TEXT FROM ALL_VIEWS WHERE VIEW_NAME = 'OAGWBG_V_BUDGETRECEIVE';
+LEFT JOIN OAGWBG_V_EXT_OAGINV_CATEGORY_CODES_V EXTCC ON EXTCC.ID = BR.CATEGORYID
+LEFT JOIN OAGWBG_V_EXT_OAGGL_BUDGET_CATEGORY_PLAN BCP ON BCP.ID = EXTCC.BUDGET_PLAN_ID
+LEFT JOIN OAGWBG_V_EXT_OAGGL_BUDGET_PRODUCT_V VPROD ON VPROD.ID = BR.PRODUCTID AND VPROD.BUDGETPLANCODE_ID = BCP.BUDGETPLAN_ID
+LEFT JOIN OAGWBG_V_EXT_OAGGL_BUDGET_ACTIVITY_V VACT ON VACT.ACTIVITY_ID = BR.ACTIVITYID AND VACT.PLAN_ID = BCP.BUDGETPLAN_ID
 ```
-→ ถ้ามี `WHERE TOTALBALANCEAMOUNT > 0` หรือ `WHERE BUDGETRECEIVESTATUS != '80201'` = confirmed root cause
 
-**2. ตรวจสอบ `OagwbgVBudgettransferChange.cs`** ว่ามี property `Plannanme`, `Productname`, `Activityname`, `BudgettypenameSource` ไหม
+เมื่อ `CATEGORYID = null` → `EXTCC = null` → `BCP = null` → `VPROD`, `VACT` ต้องการ `BCP.BUDGETPLAN_ID` ซึ่งเป็น null → **Plan, Product, Activity, BudgetType ทั้งหมด null**
 
-### แนวทางแก้
+### ข้อค้นพบเพิ่มเติม — View Name Typo
 
-**[BudgetService.cs:17343]** เปลี่ยน `sourceFund` ให้ query จาก **Table** แทน View:
+`OAGWBG_V_BUDGETTRANSFER_CHANGES` **ไม่มีใน PREPROD** — ชื่อจริงคือ **`OAGWBG_V_BUDGETTRANSFER_CHANGE`** (ไม่มี S ท้าย)
+→ ต้องตรวจสอบว่า C# model mapping ถูกต้องไหม
+
+### สาเหตุที่ CATEGORYID หาย
+
+`SaveTransferModifyItem` สร้าง J-type record แต่ไม่ได้ set `CATEGORYID` เมื่อ Confirm — ต้องตรวจสอบ code ส่วน save J-type ว่า copy `CATEGORYID` จาก parent `OAGWBG_BUDGETADJUST` มาด้วยไหม
+
+### แนวทางแก้ที่ถูกต้อง
+
+**Option A (แก้ที่ต้นเหตุ):** `SaveTransferModifyItem` ต้อง save `CATEGORYID` จาก parent `BudgetAdjust` ลง J-type `BudgetReceive` record
+
+**Option B (แก้ที่ display — safe fallback):** ใน `GetBudgetAdjustDetail` [BudgetService.cs:17418] loop `foreach (var dBr in directBrItems)` — เพิ่ม fallback ดึง `CATEGORYID` จาก parent `OAGWBG_BUDGETADJUST`:
 
 ```csharp
-// ❌ เดิม: View อาจ filter record ออกหลัง Oracle ตัดยอด
-var sourceFund = await _context.OagwbgVBudgetreceives.FirstOrDefaultAsync(x => ...);
+// ถ้า J-type record ไม่มี CATEGORYID → fallback ดึงจาก parent BudgetAdjust
+var effectiveCategoryId = dBr.Categoryid
+    ?? (await _context.OagwbgBudgetadjusts
+           .Where(a => a.Id == dBr.Budgetadjustid)
+           .Select(a => (int?)a.Categoryid)
+           .FirstOrDefaultAsync());
 
-// ✅ แก้: ใช้ Table โดยตรง — ไม่ขึ้นกับ balance/status filter
-var sourceFundRaw = await _context.OagwbgBudgetreceives.FirstOrDefaultAsync(x =>
-    x.Departmentid == adj.Departmentid &&
-    x.Costcenterid == adj.Costcenterid &&
-    x.Categoryid   == adj.Categoryid &&
-    x.Budgetsourceid == adj.Budgetsourceid &&
-    x.Budgetyear   == adj.Budgetyear &&
-    x.Budgetreceivetype != "J");
+var category = await _context.OagwbgVExtOaginvCategoryCodesVs
+    .FirstOrDefaultAsync(c => c.Id == effectiveCategoryId);
+// จากนั้น lookup Plan/Product/Activity ตาม category.BudgetPlanId เหมือนเดิม
 ```
-
-> ⚠️ Table ไม่มี computed names (`Planname`, `Productname`, etc.) → ต้อง lookup ชื่อแยกจาก ext views เหมือน pattern ที่ line 17418–17435 (TransferIn items)
 
 ### ลำดับการ Fix
 
 ```
-1. ยืนยัน root cause: รัน SQL ดู View DDL บน PREPROD (ต้อง VPN)
-2. แก้ sourceFund ให้ query จาก Table แทน View
-3. เพิ่ม lookup ชื่อ Plan/Product/Activity จาก ext views
-4. Build + Test
+1. ✅ ยืนยัน root cause: รัน SQL บน PREPROD → CATEGORYID = null หลัง Confirm
+2. ตรวจสอบ SaveTransferModifyItem ว่า save CATEGORYID ใน J-type record ไหม
+3. แก้ Option A: save CATEGORYID ตั้งแต่ save J-type record
+4. แก้ Option B: fallback ดึง CATEGORYID จาก parent BudgetAdjust ใน GetBudgetAdjustDetail
+5. ตรวจสอบ View name mapping: OAGWBG_V_BUDGETTRANSFER_CHANGE (ไม่มี S)
+6. Build + Test
 ```
