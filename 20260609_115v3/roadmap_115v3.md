@@ -1860,7 +1860,7 @@ WHERE br.BUDGETRECEIVETYPE = 'J';
 
 | # | อาการ | ไฟล์ | บรรทัด | แนวทาง | สถานะ |
 |---|-------|------|--------|--------|-------|
-| B1 | TransferIn items ไม่แสดงหลังส่ง interface | `BudgetService.cs` | 17219 | ตัด `x.Budgetadjustid == header.Id` ออก เหลือแค่ `x.Budgettransferid == currentTransferId` + `(x.Budgetadjustid == adj.Id \|\| null)` | 🔄 Dev กำลัง test |
+| B1 | TransferIn items ไม่แสดงหลังส่ง interface | `BudgetService.cs` | 17219 | ตัด `x.Budgetadjustid == header.Id` ออก เหลือแค่ `x.Budgettransferid == currentTransferId` + `(x.Budgetadjustid == adj.Id \|\| null)` | ✅ แก้แล้ว (Changeset #19081, verify 2026-06-18) |
 | B2 | Save ครั้งแรกจากหน้า Create ไม่ redirect ไปหน้า Edit | `BudgetController.cs` + `BudgetAdjustDetail.cshtml` | 1537 | redirect ไป `BudgetAdjustDetail?Id={id}` หลัง save สำเร็จ | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
 | B3 | Modal TransferOut ล้างข้อมูลไม่ครบ — btn ยังค้าง enabled | `BudgetAdjustDetail.cshtml` | 2134 | เพิ่ม `$('#btn-AddTransferOut').prop('disabled', true)` ใน `hidden.bs.modal` handler | ⬜ รอแก้ (กระทบ data integrity) |
 | B4 | ItemDetail / Reason ไม่แสดงหลังบันทึก | `BudgetService.cs` | 17504 | View `OagwbgVBudgettransferChange` มี column `Itemdetail` + `Reason` ครบ — map ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
@@ -1972,3 +1972,91 @@ var category = await _context.OagwbgVExtOaginvCategoryCodesVs
 5. ตรวจสอบ View name mapping: OAGWBG_V_BUDGETTRANSFER_CHANGE (ไม่มี S)
 6. Build + Test
 ```
+
+---
+
+## B1 Resolution — แก้ไขสำเร็จ (2026-06-18, Changeset #19081)
+
+### Root Cause สุดท้าย (3 Layers)
+
+การวิเคราะห์เพิ่มเติมพบว่า root cause ไม่ใช่ BudgetService.cs ฝั่ง read อย่างเดียว แต่มี 3 layers:
+
+**Layer 1 — Display fix (BudgetService.cs `GetBudgetAdjustDetail`)**  
+Plan lookup ใช้ `dBr.Budgetplanid` (Oracle code string เช่น `"10000"`) แต่เดิม code ใช้เป็น EF PK (int) → `plan = null` → Product/Activity null  
+Fix: match `dBr.Budgetplanid` กับ `OagwbgVExtOagglBudgetCategoryPlan.BudgetplanId` (string field)
+
+**Layer 2 — Save path bug (BudgetAdjustDetail.cshtml, confirm path)**  
+`#btn-Confirm` handler สร้าง payload ด้วย nested TransferInItems แต่ใช้ field name ผิด:
+
+| Field ที่ส่ง (เดิม) | Field ที่ `TransferInItemViewModel` ต้องการ |
+|---|---|
+| `CategoryId` | `CategoryidGiver` |
+| `BudgetTypeId` | `BudgettypeidGiver` |
+
+`TransferInItemViewModel` ไม่มี property `CategoryId` เลย → deserialize แล้วได้ null → `SaveTransferModifyItem` ลบ J-type records ทั้งหมดแล้วสร้างใหม่ด้วย `CATEGORYID=null` ทุกครั้งที่กด "ยืนยัน"
+
+**Layer 3 — Vicious cycle (BudgetAdjustDetail_TransferIn_Edit.cshtml)**  
+Record ที่มี `CATEGORYID=null` อยู่แล้ว → โหลดกลับมาเป็น `categoryId=null` → save กลับเป็น null → ไม่มีทางแก้ได้เองโดยไม่ delete+re-add
+
+### การแก้ไข
+
+**ไฟล์ 1: `OAGBudget\Views\Budget\BudgetAdjustDetail.cshtml`**  
+เปลี่ยน confirm path nested TransferInItems mapping:
+```javascript
+// ก่อน (BUG)
+CategoryId: tin.categoryId || null,
+BudgetTypeId: tin.budgetTypeId || null,
+
+// หลัง (FIX)
+CategoryidGiver: tin.categoryidGiver || tin.categoryId || null,
+BudgettypeidGiver: tin.budgettypeidGiver || tin.budgetTypeId || null,
+```
+
+**ไฟล์ 2: `OAGBudget.API\Services\Repository\BudgetService.cs`**  
+`GetBudgetAdjustDetail` — ใน loop `foreach (var dBr in directBrItems)`:
+```csharp
+// ก่อน (BUG): ใช้ dBr.Budgetplanid เป็น int (EF PK) → plan null
+var plan = await _context.OagwbgVExtOagglBudgetCategoryPlans
+    .FirstOrDefaultAsync(p => p.Id == int.Parse(dBr.Budgetplanid));
+
+// หลัง (FIX): match ด้วย BudgetplanId string code → plan ถูกต้อง
+var planByCode = !string.IsNullOrEmpty(dBr.Budgetplanid)
+    ? await _context.OagwbgVExtOagglBudgetCategoryPlans
+          .FirstOrDefaultAsync(p => p.BudgetplanId == dBr.Budgetplanid)
+    : null;
+```
+
+**ไฟล์ 3: `OAGBudget\Views\Budget\_partialView\BudgetAdjustDetail_TransferIn_Edit.cshtml`**  
+เพิ่ม frontend validation ก่อน save draft — block เมื่อมีรายการที่ `categoryId=null`:
+```javascript
+var missingCategory = currentTransferInItems.filter(function (t) {
+    return t.categoryId === null || t.categoryId === undefined || t.categoryId === '' || t.categoryId === 0;
+});
+if (missingCategory.length > 0) {
+    Swal.fire('ข้อมูลไม่ครบถ้วน', 'มีรายการรับโอน ' + missingCategory.length + ' รายการที่ไม่มี "รายการงบประมาณ"...', 'warning');
+    return;
+}
+```
+
+### Verification
+
+**API test (Python) — before/after:**
+```
+OLD payload (CategoryId=5126, CategoryidGiver=None):  DB CATEGORYID = null   FAIL
+NEW payload (CategoryId=None, CategoryidGiver=5126):  DB CATEGORYID = 5126   PASS
+```
+
+**Oracle View query หลัง fix:**
+```sql
+SELECT CATEGORYID, CATEGORYNAME, BUDGETPLANID, PLANNAME, PRODUCTID, PRODUCTNAME,
+       ACTIVITYID, ACTIVITYNAME, BUDGETTYPEID, BUDGETTYPENAME
+FROM OAGWBG_V_BUDGETRECEIVE WHERE BUDGETADJUSTID IN (127, 128)
+```
+→ คืนค่าครบทุก column (ไม่ใช่ null แล้ว) ✅
+
+### Checkin
+
+**Changeset #19081** (2026-06-18)
+- `OAGBudget\Views\Budget\BudgetAdjustDetail.cshtml`
+- `OAGBudget\Views\Budget\_partialView\BudgetAdjustDetail_TransferIn_Edit.cshtml`
+- `OAGBudget.API\Services\Repository\BudgetService.cs`
