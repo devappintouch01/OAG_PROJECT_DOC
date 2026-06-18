@@ -1558,5 +1558,61 @@ Issue 2A เดิมบอกว่า "J-type insert ไม่ set Budgetcodei
 
 | # | รายการ | ความยาก | หมายเหตุ |
 |---|--------|---------|----------|
-| Item 15 | Confirm ส่ง Oracle EBS interface | สูง | ต้องหา SP name + BatchName pattern |
-| Item 16 | Temp View สำหรับ Interface | สูง | ต้องออกแบบ DB |
+| Item 15 | Confirm ส่ง Oracle EBS interface | สูง | รอคำตอบ 3 คำถาม (ดูด้านล่าง) |
+| Item 16 | Temp View สำหรับ Interface | สูง | รอคำตอบ 3 คำถาม (ดูด้านล่าง) |
+
+---
+
+## คำถาม Pending: Item 15 & 16 (2026-06-17)
+
+> รอคำตอบจาก dev/BA ก่อน implement
+
+### Item 15 — Encumbrance Interface
+
+**Requirement ที่ได้รับ:**
+- ส่ง interface Encumbrance เฉพาะขาโอนออก
+- ยอดที่ส่ง = ยอดรับโอน (ไม่ใช่ยอดโอนออก)
+- ลงขา DR
+- ถ้ารับโอนมีมากกว่า 1 รายการ → แยกชุดรายการโอนออกจากกัน
+
+ตัวอย่าง:
+```
+รายการโอนออก 1  +  ยอดรายการรับโอน 1  →  DR  --ชุดที่ 1
+รายการโอนออก 1  +  ยอดรายการรับโอน 2  →  DR  --ชุดที่ 2
+```
+
+**❓ คำถาม 15-A:** "แยกชุดรายการโอนออก" หมายถึง:
+- **A)** แยก BatchName (ส่ง interface คนละ Batch) — 1 Batch ต่อ 1 คู่ (TransferOut, TransferIn)
+- **B)** Batch เดียวกัน แต่แยก LineNumber — DR แต่ละ TransferIn เป็น Line ต่างกัน
+
+**❓ คำถาม 15-B:** BatchName format?
+- ปัจจุบัน `BUDGET_ADJUST_` + year + timestamp ใช้กับ Budget type (`ActualFlag="B"`)
+- ขา Encumbrance ใช้ `BUDGET_ADJUST_ENC_...` หรืออะไร?
+
+**❓ คำถาม 15-C:** ค่า config Oracle:
+- `BudgetEncumbranceName` = `"OAG_BG_PREPARE"` หรือ `"OAG_BG_FINAL"` หรืออื่น?
+- `UserJeCategoryName` = `"Budget - เปลี่ยนแปลง"` เหมือนเดิม หรือต่างกัน?
+
+---
+
+### Item 16 — Temp View
+
+**Requirement ที่ได้รับ:**
+- TransferOut → CR, TransferIn → DR
+- ถ้ารับโอนมีมากกว่า 1 รายการ → แยกชุดต่อ TransferIn
+
+ตัวอย่าง:
+```
+รายการโอนออก 1   CR   ┐  ชุดที่ 1
+  รายการรับโอน 1  DR   ┘
+รายการโอนออก 1   CR   ┐  ชุดที่ 2
+  รายการรับโอน 2  DR   ┘
+```
+
+**❓ คำถาม 16-A:** View ชื่ออะไร? สร้างใหม่หรือ ALTER View ที่มีอยู่?
+
+**❓ คำถาม 16-B:** View อ่านจากตารางไหน?
+- `OAGWBG_BUDGETADJUST` (TransferOut) + `OAGWBG_BUDGETRECEIVE` type="J" (TransferIn)?
+- หรือมีตารางกลางอื่น?
+
+**❓ คำถาม 16-C:** ต้องการ CR/DR แยก row ในนั้นไหม หรือแค่ display เพื่อ review?
