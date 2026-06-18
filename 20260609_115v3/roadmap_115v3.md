@@ -1860,13 +1860,13 @@ WHERE br.BUDGETRECEIVETYPE = 'J';
 
 | # | อาการ | ไฟล์ | บรรทัด | แนวทาง | สถานะ |
 |---|-------|------|--------|--------|-------|
-| B1 | TransferIn items ไม่แสดงหลังส่ง interface | `BudgetService.cs` | 17219 | ตัด `x.Budgetadjustid == header.Id` ออก เหลือแค่ `x.Budgettransferid == currentTransferId` + `(x.Budgetadjustid == adj.Id \|\| null)` | ⬜ รอ |
-| B2 | Save ครั้งแรกจากหน้า Create ไม่ redirect ไปหน้า Edit | `BudgetController.cs` + `BudgetAdjustDetail.cshtml` | — | หลัง SaveTransferModifyItem สำเร็จและ pageId == 0 → redirect ไป `BudgetAdjustDetail?id={newId}` | ⬜ รอ |
-| B3 | Modal TransferOut ล้างข้อมูลไม่ครบ — btn ยังค้าง enabled | `BudgetAdjustDetail.cshtml` | 2124 | เพิ่ม `$('#btn-AddTransferOut').prop('disabled', true)` และ `$('#TemplateName').val('')` ใน `hidden.bs.modal` handler | ⬜ รอ |
-| B4 | ItemDetail / Reason ไม่แสดงหลังบันทึก | `BudgetService.cs` | 17503 | ตรวจสอบ View มี column หรือไม่ — ถ้าไม่มี JOIN `OagwbgBudgetadjusts` แล้ว map `Reason` + `Itemdetail` จากตารางจริง | ⬜ รอ |
-| B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17304 | API: lookup BudgetCodeDescription แล้วส่งใน `BudgetCodeName` — Frontend: render `"รหัส — ชื่อ"` | ⬜ รอ |
-| B6 | TransferIn ของ row N ไปรวมกับ row แรก | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17507 | ลบ `SelectMany` — Frontend: `buildAdjustedCostCenterTab()` วน `TransferOutItems[i].TransferInItems` แทน flat list | ⬜ รอ |
-| B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2641 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | ⬜ รอ |
+| B1 | TransferIn items ไม่แสดงหลังส่ง interface | `BudgetService.cs` | 17219 | ตัด `x.Budgetadjustid == header.Id` ออก เหลือแค่ `x.Budgettransferid == currentTransferId` + `(x.Budgetadjustid == adj.Id \|\| null)` | 🔄 Dev กำลัง test |
+| B2 | Save ครั้งแรกจากหน้า Create ไม่ redirect ไปหน้า Edit | `BudgetController.cs` + `BudgetAdjustDetail.cshtml` | 1537 | redirect ไป `BudgetAdjustDetail?Id={id}` หลัง save สำเร็จ | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
+| B3 | Modal TransferOut ล้างข้อมูลไม่ครบ — btn ยังค้าง enabled | `BudgetAdjustDetail.cshtml` | 2134 | เพิ่ม `$('#btn-AddTransferOut').prop('disabled', true)` ใน `hidden.bs.modal` handler | ⬜ รอแก้ (กระทบ data integrity) |
+| B4 | ItemDetail / Reason ไม่แสดงหลังบันทึก | `BudgetService.cs` | 17504 | View `OagwbgVBudgettransferChange` มี column `Itemdetail` + `Reason` ครบ — map ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
+| B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17304 | API: lookup BudgetCodeDescription แล้วส่งใน `BudgetCodeName` — Frontend: render `"รหัส — ชื่อ"` | ⬜ รอแก้ (display only, low priority) |
+| B6 | TransferIn ของ row N ไปรวมกับ row แรก | `BudgetAdjustDetail.cshtml` | 2530 | Dev แก้ด้วย ID-based grouping — `getTransferInItemsFromDrafts()` iterate ผ่าน `transferOutRows` ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
+| B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2651 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | 🔄 Dev กำลัง test (ยังไม่ checkin) |
 
 ### ✨ New Features
 
@@ -1875,16 +1875,13 @@ WHERE br.BUDGETRECEIVETYPE = 'J';
 | Item 15 | `SaveBudgetAdjustEncumbrance()` — ส่ง interface Encumbrance ขาโอนออก | `BudgetService.cs` (ใหม่) + `BudgetController.cs` API | loop BUDGETADJUST → BUDGETRECEIVE type=J → INSERT OAGWBG_LOG_INTERFACE (DR, ActualFlag=E, Giver segments, ยอด=TransferIn.Totalreceiveamount) | ⬜ รอ |
 | Item 16 | DDL View `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` | Oracle DB (script .sql) | UNION ALL: CR จาก BUDGETADJUST + DR จาก BUDGETRECEIVE type=J, JOIN ExpenseRule สำหรับ Seg5/8/10/11 | ⬜ รอ |
 
-### ลำดับที่แนะนำ
+### ลำดับที่แนะนำ (อัปเดต 2026-06-18 17:44)
 
 ```
-1. B3  (ง่าย, standalone — modal clear)
-2. B7  (ง่าย, standalone — bank filter swap)
-3. B2  (ง่าย, redirect หลัง create)
-4. B6  (กลาง, แก้ SelectMany + frontend loop)
-5. B1  (กลาง, แก้ filter TransferIn)
-6. B4  (กลาง, ขึ้นอยู่กับ DB verify ก่อน)
-7. B5  (กลาง, เพิ่ม column ใหม่ + frontend)
-8. Item 15  (ยาก, function ใหม่)
-9. Item 16  (ยาก, DDL + verify กับ Oracle DBA)
+1. B3  (ง่าย — modal clear, กระทบ data integrity)
+2. B7  (รอ checkin จาก dev)
+3. B1  (dev กำลัง test)
+4. B5  (display only, low priority)
+5. Item 15  (ยาก, function ใหม่)
+6. Item 16  (ยาก, DDL + verify กับ Oracle DBA)
 ```
