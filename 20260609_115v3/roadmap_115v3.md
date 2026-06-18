@@ -1563,59 +1563,210 @@ Issue 2A เดิมบอกว่า "J-type insert ไม่ set Budgetcodei
 
 ---
 
-## คำถาม Pending: Item 15 & 16 (2026-06-17)
+## Spec: Item 15 & 16 (อัปเดต 2026-06-17)
 
-> รอคำตอบจาก dev/BA ก่อน implement
+> ✅ ได้รับคำตอบครบ (ยกเว้น Item 16 column spec — ดูด้านล่าง)
 
-### Item 15 — Encumbrance Interface
+### Item 15 — Encumbrance Interface ✅ Spec ครบ
 
-**Requirement ที่ได้รับ:**
-- ส่ง interface Encumbrance เฉพาะขาโอนออก
-- ยอดที่ส่ง = ยอดรับโอน (ไม่ใช่ยอดโอนออก)
-- ลงขา DR
-- ถ้ารับโอนมีมากกว่า 1 รายการ → แยกชุดรายการโอนออกจากกัน
+**Requirement:**
+- ส่ง interface Encumbrance เฉพาะขาโอนออก (Giver segments)
+- ยอดที่ส่ง = ยอดรับโอน (`OAGWBG_BUDGETRECEIVE.TOTALRECEIVEAMOUNT`)
+- ลงขา **DR** ทุก line
+- 1 Batch ต่อ 1 เอกสาร, แยก **LineNumber** ต่อ TransferIn แต่ละรายการ
+- ชุดบัญชี (Segments) ใช้ของ TransferOut (Giver) เหมือนกันทุก line
 
-ตัวอย่าง:
+**ตัวอย่าง (1 TransferOut, 2 TransferIn):**
 ```
-รายการโอนออก 1  +  ยอดรายการรับโอน 1  →  DR  --ชุดที่ 1
-รายการโอนออก 1  +  ยอดรายการรับโอน 2  →  DR  --ชุดที่ 2
+Batch: BUDGET_ADJUST_2568_250617143022
+  Line 1  DR = ยอด TransferIn 1  Seg = ชุดบัญชีของ TransferOut
+  Line 2  DR = ยอด TransferIn 2  Seg = ชุดบัญชีของ TransferOut (เดิม)
 ```
 
-**❓ คำถาม 15-A:** "แยกชุดรายการโอนออก" หมายถึง:
-- **A)** แยก BatchName (ส่ง interface คนละ Batch) — 1 Batch ต่อ 1 คู่ (TransferOut, TransferIn)
-- **B)** Batch เดียวกัน แต่แยก LineNumber — DR แต่ละ TransferIn เป็น Line ต่างกัน
+**Oracle config values:**
+| Field | Value |
+|-------|-------|
+| `BatchName` | `BUDGET_ADJUST_` + BudgetYear + `_` + `yymmddhhmiss` |
+| `ActualFlag` | `"E"` (Encumbrance) |
+| `UserJeCategoryName` | `"Budget - เปลี่ยนแปลง"` |
+| `BudgetEncumbranceName` | `"OAG_BG_FINAL"` |
+| `EncumbranceType` | `"Web Encumbrance"` |
+| `UserJeSourceName` | `"Web Budget"` |
+| `CurrencyCode` | `"THB"` |
 
-**❓ คำถาม 15-B:** BatchName format?
-- ปัจจุบัน `BUDGET_ADJUST_` + year + timestamp ใช้กับ Budget type (`ActualFlag="B"`)
-- ขา Encumbrance ใช้ `BUDGET_ADJUST_ENC_...` หรืออะไร?
+**Segments (จาก TransferOut / OagwbgBudgetadjust):**
+- Seg1 = `Departmentid` (Giver)
+- Seg2 = `Costcenterid` (Giver)
+- Seg3 = `Budgetyear % 100`
+- Seg4 = จาก ExpenseAccountRule
+- Seg5 = `Budgetplanid`
+- Seg6 = `Productid`
+- Seg7 = `Activityid`
+- Seg8 = จาก ExpenseAccountRule
+- Seg9 = `Budgetcode`
+- Seg10, Seg11 = จาก ExpenseAccountRule
+- Seg12 = `"00"`, Seg13 = `"000"`
 
-**❓ คำถาม 15-C:** ค่า config Oracle:
-- `BudgetEncumbranceName` = `"OAG_BG_PREPARE"` หรือ `"OAG_BG_FINAL"` หรืออื่น?
-- `UserJeCategoryName` = `"Budget - เปลี่ยนแปลง"` เหมือนเดิม หรือต่างกัน?
+**Flow:**
+```
+Confirm กด → SaveTransferModifyItem (IsConfirm=true)
+           → SaveBudgetAdjustEncumbrance (ใหม่)
+             └─ foreach TransferOut (OagwbgBudgetadjust)
+                  └─ foreach TransferIn (OagwbgBudgetreceive type=J, Budgetadjustid=adj.Id)
+                       └─ INSERT OagwbgLogInterface (DR, ยอด = TransferIn.Totalreceiveamount)
+           → GetBatchStatus(BatchName)
+```
 
 ---
 
-### Item 16 — Temp View
+### Item 16 — Temp View ✅ Spec บางส่วน
 
-**Requirement ที่ได้รับ:**
-- TransferOut → CR, TransferIn → DR
-- ถ้ารับโอนมีมากกว่า 1 รายการ → แยกชุดต่อ TransferIn
+**View ใหม่:** `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE`
 
-ตัวอย่าง:
+**แหล่งข้อมูล:** `OAGWBG_BUDGETADJUST` (TransferOut) JOIN `OAGWBG_BUDGETRECEIVE` type=`"J"` (TransferIn) ผ่าน `BUDGETRECEIVE.BUDGETADJUSTID = BUDGETADJUST.ID`
+
+**โครงสร้าง (CR/DR แยก row):**
 ```
-รายการโอนออก 1   CR   ┐  ชุดที่ 1
-  รายการรับโอน 1  DR   ┘
-รายการโอนออก 1   CR   ┐  ชุดที่ 2
-  รายการรับโอน 2  DR   ┘
+ต่อ 1 คู่ (TransferOut + TransferIn) → 2 rows:
+  Row 1: DR_CR_FLAG = 'CR', ข้อมูลจาก OAGWBG_BUDGETADJUST    (TransferOut/Giver)
+  Row 2: DR_CR_FLAG = 'DR', ข้อมูลจาก OAGWBG_BUDGETRECEIVE   (TransferIn/Receiver)
 ```
 
-**❓ คำถาม 16-A:** View ชื่ออะไร? สร้างใหม่หรือ ALTER View ที่มีอยู่?
+**ตัวอย่าง (1 TransferOut, 2 TransferIn):**
+```
+DR_CR | SOURCE          | DEPT       | AMT
+CR    | TransferOut 1   | dept_giver | 1000   ← ชุดที่ 1
+DR    | TransferIn  1   | dept_recv1 |  600
+CR    | TransferOut 1   | dept_giver | 1000   ← ชุดที่ 2 (CR ซ้ำ)
+DR    | TransferIn  2   | dept_recv2 |  400
+```
 
-**❓ คำถาม 16-B:** View อ่านจากตารางไหน?
-- `OAGWBG_BUDGETADJUST` (TransferOut) + `OAGWBG_BUDGETRECEIVE` type="J" (TransferIn)?
-- หรือมีตารางกลางอื่น?
+**✅ Column Spec (ยืนยัน 2026-06-18):** format เหมือน `OAGWBG_LOG_INTERFACE` — Oracle EBS อ่าน View ตรงๆ เหมือน existing allocate interface
 
-**❓ คำถาม 16-C:** ต้องการ CR/DR แยก row ในนั้นไหม หรือแค่ display เพื่อ review?
+**Column mapping สำหรับ View:**
+
+| Column | CR row (TransferOut / BUDGETADJUST) | DR row (TransferIn / BUDGETRECEIVE type=J) |
+|--------|--------------------------------------|-------------------------------------------|
+| `WEB_BATCH_NO` | `'BUDGET_ADJUST_'||adj.BUDGETYEAR||'_'||TO_CHAR(adj.CREATEON,'YYMMDDHH24MISS')` | เดียวกัน |
+| `USER_JE_SOURCE_NAME` | `'Web Budget'` | `'Web Budget'` |
+| `USER_JE_CATEGORY_NAME` | `'Budget - เปลี่ยนแปลง'` | `'Budget - เปลี่ยนแปลง'` |
+| `ACTUAL_FLAG` | `'B'` | `'B'` |
+| `BUDGET_ENCUMBRANCE_NAME` | `'OAG_BG_FINAL'` | `'OAG_BG_FINAL'` |
+| `CURRENCY_CODE` | `'THB'` | `'THB'` |
+| `DEFAULT_EFFECTIVE_DATE` | adj.CREATEON | br.CREATEON |
+| `LINE_NUMBER` | `1` | `2` |
+| `SEGMENT1` | adj.DEPARTMENTID | br.DEPARTMENTID |
+| `SEGMENT2` | adj.COSTCENTERID | br.COSTCENTERID |
+| `SEGMENT3` | `MOD(adj.BUDGETYEAR, 100)` | `MOD(br.BUDGETYEAR, 100)` |
+| `SEGMENT4` | `'100'` | `'100'` |
+| `SEGMENT5` | JOIN ExpenseRule(adj.CATEGORYID, 5) | JOIN ExpenseRule(br.CATEGORYID, 5) |
+| `SEGMENT6` | adj.PRODUCTID | br.PRODUCTID |
+| `SEGMENT7` | adj.ACTIVITYID | br.ACTIVITYID |
+| `SEGMENT8` | JOIN ExpenseRule(adj.CATEGORYID, 8) | JOIN ExpenseRule(br.CATEGORYID, 8) |
+| `SEGMENT9` | adj.BUDGETCODE | JOIN BudgetCodeYear(br.CATEGORYID, br.BUDGETYEAR) |
+| `SEGMENT10` | JOIN ExpenseRule(adj.CATEGORYID, 10) | JOIN ExpenseRule(br.CATEGORYID, 10) |
+| `SEGMENT11` | JOIN ExpenseRule(adj.CATEGORYID, 11) | JOIN ExpenseRule(br.CATEGORYID, 11) |
+| `SEGMENT12` | `'00'` | `'00'` |
+| `SEGMENT13` | `'000'` | `'000'` |
+| `ENTERED_CR` | adj.TOTALTRANSFERAMOUNT | NULL |
+| `ACCOUNTED_CR` | adj.TOTALTRANSFERAMOUNT | NULL |
+| `ENTERED_DR` | NULL | br.TOTALRECEIVEAMOUNT |
+| `ACCOUNTED_DR` | NULL | br.TOTALRECEIVEAMOUNT |
+| `REFERENCE1` | WEB_BATCH_NO | WEB_BATCH_NO |
+| `REFERENCE4` | `'โอนเปลี่ยนแปลงเงินงบประมาณประจำปี '||adj.BUDGETYEAR` | เดียวกัน |
+| `PAGE_NAME` | `'โอนเปลี่ยนแปลงงบประมาณ'` | `'โอนเปลี่ยนแปลงงบประมาณ'` |
+| `ACTION_NAME` | `'BudgetAdjustDetail'` | `'BudgetAdjustDetail'` |
+
+**DDL skeleton:**
+```sql
+CREATE OR REPLACE VIEW OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE AS
+SELECT
+    adj.ID            AS SOURCE_ID,
+    'CR'              AS DR_CR_FLAG,
+    'BUDGET_ADJUST_' || adj.BUDGETYEAR || '_'
+        || TO_CHAR(adj.CREATEON, 'YYMMDDHH24MISS') AS WEB_BATCH_NO,
+    'Web Budget'             AS USER_JE_SOURCE_NAME,
+    'Budget - เปลี่ยนแปลง' AS USER_JE_CATEGORY_NAME,
+    'B'                      AS ACTUAL_FLAG,
+    'OAG_BG_FINAL'           AS BUDGET_ENCUMBRANCE_NAME,
+    'THB'                    AS CURRENCY_CODE,
+    adj.CREATEON             AS DEFAULT_EFFECTIVE_DATE,
+    1                        AS LINE_NUMBER,
+    adj.DEPARTMENTID         AS SEGMENT1,
+    adj.COSTCENTERID         AS SEGMENT2,
+    MOD(adj.BUDGETYEAR, 100) AS SEGMENT3,
+    '100'                    AS SEGMENT4,
+    ear5g.SEGMENT_VALUE      AS SEGMENT5,
+    adj.PRODUCTID            AS SEGMENT6,
+    adj.ACTIVITYID           AS SEGMENT7,
+    ear8g.SEGMENT_VALUE      AS SEGMENT8,
+    adj.BUDGETCODE           AS SEGMENT9,
+    ear10g.SEGMENT_VALUE     AS SEGMENT10,
+    ear11g.SEGMENT_VALUE     AS SEGMENT11,
+    '00'                     AS SEGMENT12,
+    '000'                    AS SEGMENT13,
+    NULL                     AS ENTERED_DR,
+    NULL                     AS ACCOUNTED_DR,
+    adj.TOTALTRANSFERAMOUNT  AS ENTERED_CR,
+    adj.TOTALTRANSFERAMOUNT  AS ACCOUNTED_CR,
+    adj.BUDGETTRANSFERID
+FROM OAGWBG_BUDGETADJUST adj
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear5g
+    ON ear5g.RULE_VALUE_ID = adj.CATEGORYID AND ear5g.SEGMENT_NUM = 5
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear8g
+    ON ear8g.RULE_VALUE_ID = adj.CATEGORYID AND ear8g.SEGMENT_NUM = 8
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear10g
+    ON ear10g.RULE_VALUE_ID = adj.CATEGORYID AND ear10g.SEGMENT_NUM = 10
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear11g
+    ON ear11g.RULE_VALUE_ID = adj.CATEGORYID AND ear11g.SEGMENT_NUM = 11
+
+UNION ALL
+
+SELECT
+    br.ID             AS SOURCE_ID,
+    'DR'              AS DR_CR_FLAG,
+    'BUDGET_ADJUST_' || adj.BUDGETYEAR || '_'
+        || TO_CHAR(adj.CREATEON, 'YYMMDDHH24MISS') AS WEB_BATCH_NO,
+    'Web Budget'             AS USER_JE_SOURCE_NAME,
+    'Budget - เปลี่ยนแปลง' AS USER_JE_CATEGORY_NAME,
+    'B'                      AS ACTUAL_FLAG,
+    'OAG_BG_FINAL'           AS BUDGET_ENCUMBRANCE_NAME,
+    'THB'                    AS CURRENCY_CODE,
+    br.CREATEON              AS DEFAULT_EFFECTIVE_DATE,
+    2                        AS LINE_NUMBER,
+    br.DEPARTMENTID          AS SEGMENT1,
+    br.COSTCENTERID          AS SEGMENT2,
+    MOD(br.BUDGETYEAR, 100)  AS SEGMENT3,
+    '100'                    AS SEGMENT4,
+    ear5r.SEGMENT_VALUE      AS SEGMENT5,
+    br.PRODUCTID             AS SEGMENT6,
+    br.ACTIVITYID            AS SEGMENT7,
+    ear8r.SEGMENT_VALUE      AS SEGMENT8,
+    bcy.BUDGETCODEID         AS SEGMENT9,
+    ear10r.SEGMENT_VALUE     AS SEGMENT10,
+    ear11r.SEGMENT_VALUE     AS SEGMENT11,
+    '00'                     AS SEGMENT12,
+    '000'                    AS SEGMENT13,
+    br.TOTALRECEIVEAMOUNT    AS ENTERED_DR,
+    br.TOTALRECEIVEAMOUNT    AS ACCOUNTED_DR,
+    NULL                     AS ENTERED_CR,
+    NULL                     AS ACCOUNTED_CR,
+    adj.BUDGETTRANSFERID
+FROM OAGWBG_BUDGETRECEIVE br
+JOIN OAGWBG_BUDGETADJUST adj
+    ON adj.ID = br.BUDGETADJUSTID
+LEFT JOIN OAGWBG_BUDGETCODE_YEAR bcy
+    ON bcy.CATEGORYID = br.CATEGORYID AND bcy.BUDGETYEAR = br.BUDGETYEAR
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear5r
+    ON ear5r.RULE_VALUE_ID = br.CATEGORYID AND ear5r.SEGMENT_NUM = 5
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear8r
+    ON ear8r.RULE_VALUE_ID = br.CATEGORYID AND ear8r.SEGMENT_NUM = 8
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear10r
+    ON ear10r.RULE_VALUE_ID = br.CATEGORYID AND ear10r.SEGMENT_NUM = 10
+LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear11r
+    ON ear11r.RULE_VALUE_ID = br.CATEGORYID AND ear11r.SEGMENT_NUM = 11
+WHERE br.BUDGETRECEIVETYPE = 'J';
+```
 
 ---
 
@@ -1698,3 +1849,42 @@ Issue 2A เดิมบอกว่า "J-type insert ไม่ set Budgetcodei
 **วิธีแก้:**
 - `giver-bank` (ผู้โอน): remove filter → `localGiverBanks = DropdownBankAccount` (ไม่กรอง dept)
 - `receiver-bank` (ผู้รับโอน): เพิ่ม filter ตาม `itemDeptId` ของ TransferIn item → `DropdownRecieveBankAccount.filter(b => b.Departmentid == itemDeptId)`
+
+---
+
+## Implementation Backlog (2026-06-18)
+
+> รายการงานที่รอ implement ทั้งหมด — เรียงตามลำดับความสำคัญ
+
+### 🐛 Bug Fixes
+
+| # | อาการ | ไฟล์ | บรรทัด | แนวทาง | สถานะ |
+|---|-------|------|--------|--------|-------|
+| B1 | TransferIn items ไม่แสดงหลังส่ง interface | `BudgetService.cs` | 17219 | ตัด `x.Budgetadjustid == header.Id` ออก เหลือแค่ `x.Budgettransferid == currentTransferId` + `(x.Budgetadjustid == adj.Id \|\| null)` | ⬜ รอ |
+| B2 | Save ครั้งแรกจากหน้า Create ไม่ redirect ไปหน้า Edit | `BudgetController.cs` + `BudgetAdjustDetail.cshtml` | — | หลัง SaveTransferModifyItem สำเร็จและ pageId == 0 → redirect ไป `BudgetAdjustDetail?id={newId}` | ⬜ รอ |
+| B3 | Modal TransferOut ล้างข้อมูลไม่ครบ — btn ยังค้าง enabled | `BudgetAdjustDetail.cshtml` | 2124 | เพิ่ม `$('#btn-AddTransferOut').prop('disabled', true)` และ `$('#TemplateName').val('')` ใน `hidden.bs.modal` handler | ⬜ รอ |
+| B4 | ItemDetail / Reason ไม่แสดงหลังบันทึก | `BudgetService.cs` | 17503 | ตรวจสอบ View มี column หรือไม่ — ถ้าไม่มี JOIN `OagwbgBudgetadjusts` แล้ว map `Reason` + `Itemdetail` จากตารางจริง | ⬜ รอ |
+| B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17304 | API: lookup BudgetCodeDescription แล้วส่งใน `BudgetCodeName` — Frontend: render `"รหัส — ชื่อ"` | ⬜ รอ |
+| B6 | TransferIn ของ row N ไปรวมกับ row แรก | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17507 | ลบ `SelectMany` — Frontend: `buildAdjustedCostCenterTab()` วน `TransferOutItems[i].TransferInItems` แทน flat list | ⬜ รอ |
+| B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2641 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | ⬜ รอ |
+
+### ✨ New Features
+
+| # | งาน | ไฟล์ | แนวทาง | สถานะ |
+|---|-----|------|--------|-------|
+| Item 15 | `SaveBudgetAdjustEncumbrance()` — ส่ง interface Encumbrance ขาโอนออก | `BudgetService.cs` (ใหม่) + `BudgetController.cs` API | loop BUDGETADJUST → BUDGETRECEIVE type=J → INSERT OAGWBG_LOG_INTERFACE (DR, ActualFlag=E, Giver segments, ยอด=TransferIn.Totalreceiveamount) | ⬜ รอ |
+| Item 16 | DDL View `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` | Oracle DB (script .sql) | UNION ALL: CR จาก BUDGETADJUST + DR จาก BUDGETRECEIVE type=J, JOIN ExpenseRule สำหรับ Seg5/8/10/11 | ⬜ รอ |
+
+### ลำดับที่แนะนำ
+
+```
+1. B3  (ง่าย, standalone — modal clear)
+2. B7  (ง่าย, standalone — bank filter swap)
+3. B2  (ง่าย, redirect หลัง create)
+4. B6  (กลาง, แก้ SelectMany + frontend loop)
+5. B1  (กลาง, แก้ filter TransferIn)
+6. B4  (กลาง, ขึ้นอยู่กับ DB verify ก่อน)
+7. B5  (กลาง, เพิ่ม column ใหม่ + frontend)
+8. Item 15  (ยาก, function ใหม่)
+9. Item 16  (ยาก, DDL + verify กับ Oracle DBA)
+```
