@@ -1616,3 +1616,85 @@ Issue 2A เดิมบอกว่า "J-type insert ไม่ set Budgetcodei
 - หรือมีตารางกลางอื่น?
 
 **❓ คำถาม 16-C:** ต้องการ CR/DR แยก row ในนั้นไหม หรือแค่ display เพื่อ review?
+
+---
+
+## Bug Report: พบระหว่าง Testing หลัง Items 1–14 (2026-06-17)
+
+> พบจาก dev testing หลัง checkin ล่าสุด
+
+### สรุปรวม
+
+| # | อาการ | ไฟล์ | ความยาก |
+|---|-------|------|---------|
+| B1 | TransferIn items ไม่แสดงหลังส่ง interface | BudgetService.cs | กลาง |
+| B2 | Pagination ไม่ทำงาน | BudgetAdjustDetail.cshtml | ง่าย–กลาง |
+| B3 | Modal TransferOut ล้างข้อมูลไม่ครบ | BudgetAdjustDetail.cshtml | ง่าย |
+| B4 | ItemDetail / Reason ไม่แสดงหลังบันทึก | BudgetService.cs | กลาง |
+| B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | BudgetAdjustDetail.cshtml | กลาง |
+| B6 | TransferIn ของ row N ไปรวมกับ row แรก | BudgetService.cs | กลาง |
+| B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | BudgetAdjustDetail.cshtml | ยาก |
+
+---
+
+### B1 — TransferIn items ไม่แสดงหลังส่ง interface
+
+**Root Cause:** `GetBudgetAdjustDetail` query J-type records มี filter condition ที่อาจไม่ match หลัง Confirm เนื่องจาก `Budgetadjustid` ถูก update ระหว่าง interface flow
+
+**วิธีแก้:** ตรวจสอบ filter ~line 17220 ว่าหลัง Confirm, `Budgetadjustid` ยังคงค่าเดิมหรือไม่ — ถ้าเปลี่ยน ต้องปรับ query ให้ใช้ `Budgettransferid` เป็น fallback
+
+---
+
+### B2 — Pagination ไม่ทำงาน
+
+**Root Cause:** ไม่มี pagination logic ใน `renderTransferOutTable()` — render ทั้งหมดครั้งเดียว ปุ่มหน้าไม่มี handler
+
+**วิธีแก้:** เพิ่ม client-side pagination ใน `renderTransferOutTable()` หรือใช้ DataTables plugin
+
+---
+
+### B3 — Modal TransferOut ล้างข้อมูลไม่ครบ
+
+**Root Cause:** `hidden.bs.modal` handler ล้างบาง field แต่ขาด: `OutputCodeId`, `ActivityCodeId`, `BudgetTypeId`, `CategoryId`, `SegmentCate`, `AccountSegment`, `TemplateId`, `TemplateName`
+
+**วิธีแก้:** เพิ่ม field เหล่านี้ใน clear block ของ `hidden.bs.modal` handler
+
+---
+
+### B4 — ItemDetail / Reason ไม่แสดงหลังบันทึก
+
+**Root Cause:** `GetBudgetAdjustDetail` map ค่าจาก `mainHeaderView` (View `OagwbgVBudgettransferChanges`) แต่ View อาจไม่มี column `Itemdetail` / `Reason` หรือ `SaveTransferModifyItem` ไม่ได้ save ค่าลง `OagwbgBudgettransfer` ตารางจริง
+
+**วิธีแก้:** ตรวจสอบ View มี column ทั้งสองไหม — ถ้าไม่มี ต้อง JOIN กับ `OagwbgBudgetadjusts` หรือ `OagwbgBudgettransfers` แล้วดึงตรง
+
+---
+
+### B5 — คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย
+
+**Root Cause:** `renderTransferOutTable()` แสดงเฉพาะ `item.budgetCodeDisplay` (รหัส 20 หลัก) ไม่มี BudgetCodeName ใน TransferOutItemViewModel
+
+**วิธีแก้:**
+- **API:** `GetBudgetAdjustDetail` เพิ่ม lookup ชื่อ budget code แล้วส่งใน `BudgetCodeName` property
+- **Frontend:** `renderTransferOutTable()` render เป็น `"รหัส — ชื่อ"` หรือแยก 2 บรรทัด
+
+---
+
+### B6 — TransferIn ของ row N ไปรวมกับ row แรก
+
+**Root Cause:** ใน response model `GetBudgetAdjustDetail` ใช้ `SelectMany` flatten `TransferInItems` จากทุก TransferOut เข้า list เดียวที่ root level → ทำให้ association หลุด
+
+**วิธีแก้:** เก็บ `TransferInItems` ไว้ **nested** ใน `TransferOutItems[i].TransferInItems` แทน flat list — ปรับ `buildAdjustedCostCenterTab()` ให้วน loop จาก `pageModel.TransferOutItems[].TransferInItems`
+
+---
+
+### B7 — Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน
+
+**Root Cause:** `buildAdjustedCostCenterTab()` — `receiver-bank` (ผู้รับโอน) ควรกรองตาม department ของ TransferIn item แต่ใช้ condition เดียวกับ `giver-bank` (ผู้โอน) หรือไม่มี filter เลย
+
+**Requirement ที่ dev ระบุ:**
+- บัญชีผู้รับโอน → ย้าย condition การกรองของบัญชีผู้โอนมาใช้ (กรองตาม dept ของ TransferIn)
+- บัญชีผู้โอน → ไม่ต้องกรอง (แสดงทั้งหมด)
+
+**วิธีแก้:**
+- `giver-bank` (ผู้โอน): remove filter → `localGiverBanks = DropdownBankAccount` (ไม่กรอง dept)
+- `receiver-bank` (ผู้รับโอน): เพิ่ม filter ตาม `itemDeptId` ของ TransferIn item → `DropdownRecieveBankAccount.filter(b => b.Departmentid == itemDeptId)`
