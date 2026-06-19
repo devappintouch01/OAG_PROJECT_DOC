@@ -2059,7 +2059,7 @@ ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 | B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17304 | API: lookup BudgetCodeDescription แล้วส่งใน `BudgetCodeName` — Frontend: render `"รหัส — ชื่อ"` | ⬜ รอแก้ (display only, low priority) |
 | B6 | TransferIn ของ row N ไปรวมกับ row แรก | `BudgetAdjustDetail.cshtml` | 2530 | Dev แก้ด้วย ID-based grouping — `getTransferInItemsFromDrafts()` iterate ผ่าน `transferOutRows` ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
 | B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2700 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | ✅ แก้แล้ว (Changeset #19084, verify 2026-06-19) |
-| B8 | รหัสงบประมาณ (Segment 9) บันทึกลง DB ไม่ถูกต้อง | `BudgetService.cs` | 14611, 14633 | ดูรายละเอียดด้านล่าง | ⬜ รอแก้ |
+| B8 | รหัสงบประมาณ (Segment 9) บันทึกลง DB ไม่ถูกต้อง | `BudgetService.cs` | 14586–14598, 14625, 14647 | Extract `segments[8]` จาก `AccountSegment` — ดูรายละเอียดด้านล่าง | ✅ แก้แล้ว (verify 2026-06-19) |
 
 ### B8 — รหัสงบประมาณ (Segment 9) บันทึกลง DB ไม่ถูกต้อง
 
@@ -2067,10 +2067,10 @@ ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 
 **อาการ:** หลังบันทึกรายการโอนออก ค่า `BUDGETCODE` ใน `OAGWBG_BUDGETADJUST` ไม่ตรงกับรหัสงบประมาณที่เลือก — ทำให้ Segment 9 ที่ส่ง Oracle EBS Interface ผิด
 
-**Root Cause — `SaveTransferModifyItem()` ([BudgetService.cs](../OAGBudget.API/Services/Repository/BudgetService.cs) line 14611 และ 14633):**
+**Root Cause — `SaveTransferModifyItem()` ([BudgetService.cs](../OAGBudget.API/Services/Repository/BudgetService.cs)):**
 
 ```csharp
-// บรรทัด 14611 (new record) และ 14633 (update) — ทั้งสองจุดเหมือนกัน
+// เดิม (ผิด) — ใช้ full string หรือ header-level SegmentCate
 Budgetcode = model.SegmentCate ?? giverItem.AccountSegment
 ```
 
@@ -2087,35 +2087,23 @@ Budgetcode = model.SegmentCate ?? giverItem.AccountSegment
 1. **วิธีหลัก**: Extract จาก `giverItem.AccountSegment` — split "." แล้วเอา index 8
 2. **วิธีสำรอง**: lookup จาก `OagwbgBudgetcodeYears` ตาม `(Budgetyear, CategoryId)` ของ item นั้น (pattern เดียวกับ PRECHECK line 14154–14157)
 
-**แนวทางแก้:**
+**Fix จริง (dev แก้แล้ว — verify 2026-06-19):**
 
 ```csharp
-// แทนที่: Budgetcode = model.SegmentCate ?? giverItem.AccountSegment
-string resolvedBudgetCode = null;
-
-// 1. Extract seg9 จาก AccountSegment ถ้ามีค่าและมีรูปแบบ seg1.seg2...seg13
-if (!string.IsNullOrWhiteSpace(giverItem.AccountSegment) && giverItem.AccountSegment.Contains("."))
+// line 14586–14598: คำนวณ resolvedBudgetCode ก่อน insert/update
+string resolvedBudgetCode = model.SegmentCate;       // fallback
+if (!string.IsNullOrEmpty(giverItem.AccountSegment))
 {
-    var segs = giverItem.AccountSegment.Split('.');
-    if (segs.Length >= 9) resolvedBudgetCode = segs[8];
+    var segments = giverItem.AccountSegment.Split('.');
+    if (segments.Length >= 9)
+        resolvedBudgetCode = segments[8];            // ✅ extract seg9 (index 8)
+    else
+        resolvedBudgetCode = giverItem.AccountSegment;
 }
 
-// 2. Fallback: lookup จาก OagwbgBudgetcodeYears ตาม CategoryId ของ item นี้
-if (string.IsNullOrWhiteSpace(resolvedBudgetCode) && giverItem.CategoryId.HasValue)
-{
-    resolvedBudgetCode = await _context.OagwbgBudgetcodeYears
-        .Where(x => x.Budgetyear == resolvedBudgetYear && x.Categoryid == giverItem.CategoryId)
-        .Select(x => x.Budgetcodeid)
-        .FirstOrDefaultAsync();
-}
-
-// 3. Last resort: ใช้ model.SegmentCate (เหมือนเดิม)
-resolvedBudgetCode ??= model.SegmentCate;
-
-Budgetcode = resolvedBudgetCode
+// line 14625 (new record): Budgetcode = resolvedBudgetCode
+// line 14647 (update record): existingAdjust.Budgetcode = resolvedBudgetCode;
 ```
-
-**ไฟล์ที่ต้องแก้:** `BudgetService.cs` line **14611** (new) และ **14633** (update) — แก้ทั้งสองจุดพร้อมกัน
 
 ---
 
@@ -2129,9 +2117,8 @@ Budgetcode = resolvedBudgetCode
 ### ลำดับที่แนะนำ (อัปเดต 2026-06-19)
 
 ```
-1. B8  (critical — Segment 9 บันทึกผิด กระทบ Oracle EBS Interface)
-2. B5  (display only, low priority)
-3. Item 16  (deploy SQL script บน Oracle — แก้ typo ACTIAL_FLAG ก่อน)
+1. B5  (display only, low priority)
+2. Item 16  (deploy SQL script บน Oracle — แก้ typo ACTIAL_FLAG ก่อน)
 ```
 
 ---
