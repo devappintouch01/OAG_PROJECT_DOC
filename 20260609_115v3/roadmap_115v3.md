@@ -1951,14 +1951,14 @@ ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 | # | ประเด็น | ระดับ | รายละเอียด |
 |---|---------|-------|-----------|
 | 1 | Typo: `ACTIAL_FLAG` | ❌ Critical | Column header และ BASE CTE ขาด `U` — ควรเป็น `ACTUAL_FLAG` |
-| 2 | DR row: `ACTUAL_FLAG = 'B'` | ❌ Critical | BASE กำหนด `'B'` ให้ทั้งสอง row — ชุดที่ 1 (โอนออก/DR) ควรใช้ `'E'` (Encumbrance) ตาม `ConfirmBudgetTransferAdjust()` line ~16197 |
+| 2 | DR row: `ACTUAL_FLAG = 'B'` | ✅ | SA/Dev ยืนยัน 2026-06-19 — ทั้ง DR และ CR ใช้ `'B'` ถูกต้องแล้ว |
 | 3 | `REFERENCE1` ใช้ `SYSDATE` | ⚠️ Minor | ค่าเปลี่ยนทุก query — ควรใช้ `BTC.TRANSFERDATE` หรือ `BTC.CREATEON` แทน |
 | 4 | View name `OAGWBG_V_BUDGETTRANSFER_CHANGE` | ✅ | ยืนยันจาก EF context ถูกต้อง |
 | 5 | Logic UNION ALL DR+CR | ✅ | ถูกต้อง |
 | 6 | Bank account JOIN | ✅ | `OAGWBG_BUDGETRECEIVEREFUND_COSTCENTER` ถูกต้อง |
 | 7 | Filter `TRANSFERSTATUSID = 80201` | ✅ | ถูกต้อง |
 
-**สิ่งที่ต้องแก้ก่อน deploy จริง:** Issue 1 (typo) และ Issue 2 (ACTUAL_FLAG DR = 'E')
+**สิ่งที่ต้องแก้ก่อน deploy จริง:** Issue 1 เท่านั้น — แก้ typo `ACTIAL_FLAG` → `ACTUAL_FLAG`
 
 ---
 
