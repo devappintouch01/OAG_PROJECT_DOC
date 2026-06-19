@@ -1768,128 +1768,197 @@ LEFT JOIN OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_VV ear11r
 WHERE br.BUDGETRECEIVETYPE = 'J';
 ```
 
-**DDL Script (พร้อม deploy — 2026-06-18):**
+**DDL Script โดย Dev (2026-06-19) — ไฟล์: `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE_dev.sql`**
 
-> แนวทางเปลี่ยนเป็นอ่านจาก `OAGWBG_LOG_INTERFACE` โดยตรง (ข้อมูลถูก INSERT โดย `ConfirmBudgetTransferAdjust()` แล้ว) — ไม่ต้อง recompute segments
+> แนวทาง: อ่านจาก `OAGWBG_V_BUDGETTRANSFER_CHANGE` (source tables) ผ่าน UNION ALL DR+CR — เหมือน pattern ของ OVERLAPYEAR interface view
 
 ```sql
--- OAGWBG.OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE
--- Purpose : แสดงรายการ Interface ที่ส่งจากหน้าโอนเปลี่ยนแปลงงบประมาณ (CR-115v3)
---           อ่านจาก OAGWBG_LOG_INTERFACE ที่ถูก INSERT โดย ConfirmBudgetTransferAdjust()
---           ACTUAL_FLAG = 'B' → ขา CR (รับโอน, Budget)
---           ACTUAL_FLAG = 'E' → ขา DR (โอนออก, Encumbrance)
--- Deploy  : run เป็น DBA / OAGWBG schema owner บน PREPROD แล้ว PROD
--- Created : 2026-06-18
+-- OAGWBG.OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE source
 
-CREATE OR REPLACE FORCE EDITIONABLE VIEW "OAGWBG"."OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE"
-(
-  "ID",
-  "WEB_BATCH_NO",
-  "USER_JE_SOURCE_NAME",
-  "REFERENCE4",
-  "REFERENCE5",
-  "LEDGER_ID",
-  "USER_JE_CATEGORY_NAME",
-  "DEFAULT_EFFECTIVE_DATE",
-  "ACTUAL_FLAG",
-  "BUDGET_ENCUMBRANCE_NAME",
-  "ENCUMBRANCE_TYPE",
-  "CURRENCY_CODE",
-  "ATTRIBUTE3",
-  "ATTRIBUTE4",
-  "LINE_NUMBER",
-  "SEGMENT1",
-  "SEGMENT2",
-  "SEGMENT3",
-  "SEGMENT4",
-  "SEGMENT5",
-  "SEGMENT6",
-  "SEGMENT7",
-  "SEGMENT8",
-  "SEGMENT9",
-  "SEGMENT10",
-  "SEGMENT11",
-  "SEGMENT12",
-  "SEGMENT13",
-  "ENTERED_DR",
-  "ACCOUNTED_DR",
-  "ENTERED_CR",
-  "ACCOUNTED_CR",
-  "REFERENCE1",
-  "REFERENCE10",
-  "REFERENCE_PAGE",
-  "PAGE_NAME",
-  "STATUS",
-  "MESSAGE",
-  "CREATED_BY",
-  "LAST_UPDATED_BY",
-  "CREATION_DATE",
-  "LAST_UPDATE_DATE",
-  "TRANSFER_TYPE",
-  "ACTION_NAME",
-  "BUDGETTRANSFER_ID",
-  "TRANSFERNO",
-  "ROUNDNO",
-  "BUDGETYEAR",
-  "TRANSFERSTATUSID"
-) AS
+CREATE OR REPLACE FORCE EDITIONABLE VIEW "OAGWBG"."OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE" ("WEB_BATCH_NO", "USER_JE_SOURCE_NAME", "REFERENCE4", "REFERENCE5", "LEDGER_ID", "USER_JE_CATEGORY_NAME", "TRANSFER_DATE", "DEFAULT_EFFECTIVE_DATE", "ACTIAL_FLAG", "BUDGET_ENCUMBRANCE_NAME", "CURRENCY_CODE", "LINE_NUMBER", "SEGMENT1", "SEGMENT2", "SEGMENT3", "SEGMENT4", "SEGMENT5", "SEGMENT6", "SEGMENT7", "SEGMENT8", "SEGMENT9", "SEGMENT10", "SEGMENT11", "SEGMENT12", "SEGMENT13", "ENTERED_DR", "ACCOUNTED_DR", "ENTERED_CR", "ACCOUNTED_CR", "REFERENCE1", "CREATED_BY", "LAST_UPDATED_BY", "CREATION_DATE", "LAST_UPDATE_DATE", "ITEM_CATEGORY", "REFERENCE10", "TRANSFER_NO", "RESERVED_NO", "RECEIPIENT_ACCOUNT", "SENDER_ACCOUNT", "TYPE", "TRANSFERTYPE") AS 
+  WITH
+    -- 1. BASE
+    BASE AS (
+        SELECT
+            BTC.ID                  AS BAT_ID,
+            BTC.BUDGETRECEIVEIDSOURCE AS RECEIVE_ID,
+            NVL(RBN.BATCHNAME,
+                'BUDGET_ADJUST_' || BTC.BUDGETYEAR || '_' || BTC.ROUNDNO || '_'
+                || TO_CHAR(BTC.TRANSFERDATE,'YYYYMMDDHH24MISS'))    AS WEB_BATCH_NO,
+            'Web Budget'                                             AS USER_JE_SOURCE_NAME,
+            'โอนเปลี่ยนแปลงงบประมาณประจำปี ' || BTC.BUDGETYEAR
+                || ' โอนครั้งที่ ' || BTC.ROUNDNO                  AS REFERENCE4,
+            'โอนเปลี่ยนแปลงงบประมาณประจำปี ' || BTC.BUDGETYEAR
+                || ' โอนครั้งที่ ' || BTC.ROUNDNO                  AS REFERENCE5,
+            CF.CONFIG_VALUE                                          AS LEDGER_ID,
+            'Budget - เปลี่ยนแปลง'                                  AS USER_JE_CATEGORY_NAME,
+            TO_CHAR(BTC.TRANSFERDATE,'YYYY-MM-DD')                  AS TRANSFER_DATE,
+            CASE WHEN BTC.TRANSFERDATE < SYSDATE
+                 THEN TO_CHAR(BTC.TRANSFERDATE,'YYYY-MM-DD')
+                 ELSE TO_CHAR(SYSDATE,'YYYY-MM-DD')
+            END                                                      AS DEFAULT_EFFECTIVE_DATE,
+            'B'                                                      AS ACTIAL_FLAG,
+            'OAG_BG_FINAL'                                           AS BUDGET_ENCUMBRANCE_NAME,
+            'THB'                                                    AS CURRENCY_CODE,
+
+            -- ฝั่งโอนออก (Source / DR)
+            MOD(BR_SRC.BUDGETYEAR, 100)                             AS SEGMENT3_SRC,
+            NVL(BR_SRC.BUDGETSOURCEID, '100')                       AS SEGMENT4_SRC,
+            EAR_SRC.BUDGETPLANID                                     AS SEGMENT5_SRC,
+            BR_SRC.PRODUCTID                                         AS SEGMENT6_SRC,
+            BR_SRC.ACTIVITYID                                        AS SEGMENT7_SRC,
+            EAR_SRC.BUDGETTYPEID                                     AS SEGMENT8_SRC,
+            NVL(BR_SRC.BUDGETCODEID, EAR_SRC.BUDGETCODE)           AS SEGMENT9_SRC,
+            EAR_SRC.ACCOUNTNO                                        AS SEGMENT10_SRC,
+            EAR_SRC.SUBACCOUNTNO                                     AS SEGMENT11_SRC,
+            BR_SRC.DEPARTMENTID                                      AS DEPARTMENT_ID_SRC,
+            BR_SRC.COSTCENTERID                                      AS COSTCENTER_ID_SRC,
+
+            -- ฝั่งรับโอน (Target / CR)
+            MOD(BR_TGT.BUDGETYEAR, 100)                             AS SEGMENT3_TGT,
+            NVL(BR_TGT.BUDGETSOURCEID, '100')                       AS SEGMENT4_TGT,
+            EAR_TGT.BUDGETPLANID                                     AS SEGMENT5_TGT,
+            BR_TGT.PRODUCTID                                         AS SEGMENT6_TGT,
+            BR_TGT.ACTIVITYID                                        AS SEGMENT7_TGT,
+            EAR_TGT.BUDGETTYPEID                                     AS SEGMENT8_TGT,
+            NVL(BR_TGT.BUDGETCODEID, EAR_TGT.BUDGETCODE)           AS SEGMENT9_TGT,
+            EAR_TGT.ACCOUNTNO                                        AS SEGMENT10_TGT,
+            EAR_TGT.SUBACCOUNTNO                                     AS SEGMENT11_TGT,
+            BR_TGT.DEPARTMENTID                                      AS DEPARTMENT_ID_TGT,
+            BR_TGT.COSTCENTERID                                      AS COSTCENTER_ID_TGT,
+
+            '00'                                                     AS SEGMENT12,
+            '000'                                                    AS SEGMENT13,
+            BTC.TOTALTRANSFERAMOUNT                                  AS AMOUNT,
+            'BUDGET_ADJUST_' || BTC.BUDGETYEAR || '_' || BTC.ROUNDNO
+                || '_' || TO_CHAR(SYSDATE,'yyyyMMddHHmmss')         AS REFERENCE1,
+            BTC.CREATEBY                                             AS CREATED_BY,
+            NVL(BTC.UPDATEBY, BTC.CREATEBY)                         AS LAST_UPDATED_BY,
+            BTC.CREATEON                                             AS CREATION_DATE,
+            NVL(BTC.UPDATEON, BTC.CREATEON)                         AS LAST_UPDATE_DATE,
+            CC.CATEGORY                                              AS ITEM_CATEGORY,
+            BR_SRC.CATEGORYNAME                                      AS REFERENCE10,
+            BTC.ROUNDNO                                              AS TRANSFER_NO,
+            BTC.TRANSFERNO                                           AS RESERVED_NO,
+            OBTC.BANKACCOUNTGIVERID,
+            OBTC.BANKACCOUNTID
+
+        FROM OAGWBG_V_BUDGETTRANSFER_CHANGE BTC
+            LEFT JOIN OAGWBG_BUDGETADJUST        BA  ON BA.ID = BTC.ID
+            LEFT JOIN OAGWBG_SYSTEMCONFIG        CF  ON CF.CONFIG_KEY = 'Ledger'
+            LEFT JOIN OAGWBG_V_BUDGETRECEIVE     BR_SRC ON BR_SRC.ID = BTC.BUDGETRECEIVEIDSOURCE
+            LEFT JOIN OAGWBG_V_BUDGETRECEIVE     BR_TGT ON BR_TGT.ID = BTC.BUDGETRECEIVEIDTARGET
+            LEFT JOIN (
+                SELECT * FROM (
+                    SELECT RBN.*, ROW_NUMBER() OVER (
+                        PARTITION BY RECEIVEID, ROUNDNO ORDER BY RUNNING DESC
+                    ) AS RN
+                    FROM OAGWBG_RECEIVE_BATCH_NO RBN
+                    WHERE RBN.INTERFACETYPE = 'J'
+                ) WHERE RN = 1
+            ) RBN ON RBN.RECEIVEID = BTC.BUDGETRECEIVEIDTARGET
+                 AND RBN.ROUNDNO   = BTC.ROUNDNO
+            LEFT JOIN OAGWBG_V_EXT_OAGINV_CATEGORY_CODES_V CC ON CC.ID = BR_SRC.CATEGORYID
+            LEFT JOIN (
+                SELECT * FROM (
+                    SELECT EAR.*, ROW_NUMBER() OVER (
+                        PARTITION BY CATEGORYID
+                        ORDER BY CASE WHEN BUDGETYEAR IS NOT NULL
+                                       AND PRODUCTID   IS NOT NULL
+                                       AND ACTIVITYCODEID IS NOT NULL
+                                 THEN 1 ELSE 2 END
+                    ) RN
+                    FROM OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V EAR
+                ) WHERE RN = 1
+            ) EAR_SRC ON EAR_SRC.CATEGORYID = BR_SRC.CATEGORYID
+            LEFT JOIN (
+                SELECT * FROM (
+                    SELECT EAR.*, ROW_NUMBER() OVER (
+                        PARTITION BY CATEGORYID
+                        ORDER BY CASE WHEN BUDGETYEAR IS NOT NULL
+                                       AND PRODUCTID   IS NOT NULL
+                                       AND ACTIVITYCODEID IS NOT NULL
+                                 THEN 1 ELSE 2 END
+                    ) RN
+                    FROM OAGWBG_V_EXT_OAGPO_EXPENSE_ACCOUNT_RULE_V EAR
+                ) WHERE RN = 1
+            ) EAR_TGT ON EAR_TGT.CATEGORYID = BR_TGT.CATEGORYID
+            LEFT JOIN OAGWBG_BUDGETRECEIVEREFUND_COSTCENTER OBTC
+                ON OBTC.TRANSFERID    = BA.BUDGETTRANSFERID
+               AND OBTC.COSTCENTERID  = BR_SRC.COSTCENTERID
+               AND OBTC.EXPENSETYPEID = NVL(CC.EXPENSE_TYPE_ID, '0')
+               AND OBTC.BUDGETPLANID  = BR_SRC.BUDGETPLANID
+
+        WHERE BTC.TRANSFERSTATUSID = 80201
+          AND BTC.TRANSFERTYPE     = '1'
+    )
+
+-- ชุดที่ 1: โอนออก (DR)
 SELECT
-  LI.ID,
-  LI.WEB_BATCH_NO,
-  LI.USER_JE_SOURCE_NAME,
-  LI.REFERENCE4,
-  LI.REFERENCE5,
-  LI.LEDGER_ID,
-  LI.USER_JE_CATEGORY_NAME,
-  LI.DEFAULT_EFFECTIVE_DATE,
-  LI.ACTUAL_FLAG,
-  LI.BUDGET_ENCUMBRANCE_NAME,
-  LI.ENCUMBRANCE_TYPE,
-  LI.CURRENCY_CODE,
-  LI.ATTRIBUTE3,
-  LI.ATTRIBUTE4,
-  LI.LINE_NUMBER,
-  LI.SEGMENT1,
-  LI.SEGMENT2,
-  LI.SEGMENT3,
-  LI.SEGMENT4,
-  LI.SEGMENT5,
-  LI.SEGMENT6,
-  LI.SEGMENT7,
-  LI.SEGMENT8,
-  LI.SEGMENT9,
-  LI.SEGMENT10,
-  LI.SEGMENT11,
-  LI.SEGMENT12,
-  LI.SEGMENT13,
-  LI.ENTERED_DR,
-  LI.ACCOUNTED_DR,
-  LI.ENTERED_CR,
-  LI.ACCOUNTED_CR,
-  LI.REFERENCE1,
-  LI.REFERENCE10,
-  LI.REFERENCE_PAGE,
-  LI.PAGE_NAME,
-  LI.STATUS,
-  LI.MESSAGE,
-  LI.CREATED_BY,
-  LI.LAST_UPDATED_BY,
-  LI.CREATION_DATE,
-  LI.LAST_UPDATE_DATE,
-  LI.TRANSFER_TYPE,
-  LI.ACTION_NAME,
-  BT.ID          AS BUDGETTRANSFER_ID,
-  BT.TRANSFERNO,
-  BT.ROUNDNO,
-  BT.BUDGETYEAR,
-  BT.TRANSFERSTATUSID
-FROM OAGWBG.OAGWBG_LOG_INTERFACE LI
-LEFT JOIN OAGWBG.OAGWBG_BUDGETTRANSFER BT
-  ON BT.ID = TO_NUMBER(LI.ATTRIBUTE3)
-WHERE LI.TRANSFER_TYPE  = 'ADJUSTMENT'
-  AND LI.ACTION_NAME    = 'SaveBudgetAdjust'
-ORDER BY LI.ID;
+    b.WEB_BATCH_NO, b.USER_JE_SOURCE_NAME,
+    b.REFERENCE4, b.REFERENCE5, b.LEDGER_ID, b.USER_JE_CATEGORY_NAME,
+    b.TRANSFER_DATE, b.DEFAULT_EFFECTIVE_DATE, b.ACTIAL_FLAG,
+    b.BUDGET_ENCUMBRANCE_NAME, b.CURRENCY_CODE,
+    ROW_NUMBER() OVER (PARTITION BY b.BAT_ID ORDER BY b.BAT_ID) AS LINE_NUMBER,
+    b.DEPARTMENT_ID_SRC  AS SEGMENT1,
+    b.COSTCENTER_ID_SRC  AS SEGMENT2,
+    b.SEGMENT3_SRC AS SEGMENT3, b.SEGMENT4_SRC AS SEGMENT4, b.SEGMENT5_SRC AS SEGMENT5,
+    b.SEGMENT6_SRC AS SEGMENT6, b.SEGMENT7_SRC AS SEGMENT7, b.SEGMENT8_SRC AS SEGMENT8,
+    b.SEGMENT9_SRC AS SEGMENT9, b.SEGMENT10_SRC AS SEGMENT10, b.SEGMENT11_SRC AS SEGMENT11,
+    b.SEGMENT12, b.SEGMENT13,
+    b.AMOUNT AS ENTERED_DR, b.AMOUNT AS ACCOUNTED_DR, NULL AS ENTERED_CR, NULL AS ACCOUNTED_CR,
+    b.REFERENCE1, b.CREATED_BY, b.LAST_UPDATED_BY, b.CREATION_DATE, b.LAST_UPDATE_DATE,
+    b.ITEM_CATEGORY, b.REFERENCE10, b.TRANSFER_NO, b.RESERVED_NO,
+    ''                          AS RECEIPIENT_ACCOUNT,
+    bank_giver.CASH_ACC         AS SENDER_ACCOUNT,
+    'O'                         AS TYPE,
+    'ADJUSTMENT'                AS TRANSFERTYPE
+FROM BASE b
+    LEFT JOIN OAGWBG_V_EXT_OAGCE_BANK_ACCOUNT_V bank_giver
+           ON bank_giver.BANK_ACCOUNT_ID = b.BANKACCOUNTGIVERID
+
+UNION ALL
+
+-- ชุดที่ 2: รับโอน (CR)
+SELECT
+    b.WEB_BATCH_NO, b.USER_JE_SOURCE_NAME,
+    b.REFERENCE4, b.REFERENCE5, b.LEDGER_ID, b.USER_JE_CATEGORY_NAME,
+    b.TRANSFER_DATE, b.DEFAULT_EFFECTIVE_DATE, b.ACTIAL_FLAG,
+    b.BUDGET_ENCUMBRANCE_NAME, b.CURRENCY_CODE,
+    ROW_NUMBER() OVER (PARTITION BY b.BAT_ID ORDER BY b.BAT_ID) AS LINE_NUMBER,
+    b.DEPARTMENT_ID_TGT  AS SEGMENT1,
+    b.COSTCENTER_ID_TGT  AS SEGMENT2,
+    b.SEGMENT3_TGT AS SEGMENT3, b.SEGMENT4_TGT AS SEGMENT4, b.SEGMENT5_TGT AS SEGMENT5,
+    b.SEGMENT6_TGT AS SEGMENT6, b.SEGMENT7_TGT AS SEGMENT7, b.SEGMENT8_TGT AS SEGMENT8,
+    b.SEGMENT9_TGT AS SEGMENT9, b.SEGMENT10_TGT AS SEGMENT10, b.SEGMENT11_TGT AS SEGMENT11,
+    b.SEGMENT12, b.SEGMENT13,
+    NULL AS ENTERED_DR, NULL AS ACCOUNTED_DR, b.AMOUNT AS ENTERED_CR, b.AMOUNT AS ACCOUNTED_CR,
+    b.REFERENCE1, b.CREATED_BY, b.LAST_UPDATED_BY, b.CREATION_DATE, b.LAST_UPDATE_DATE,
+    b.ITEM_CATEGORY, b.REFERENCE10, b.TRANSFER_NO, b.RESERVED_NO,
+    bank_receiver.CASH_ACC      AS RECEIPIENT_ACCOUNT,
+    ''                          AS SENDER_ACCOUNT,
+    'I'                         AS TYPE,
+    'ADJUSTMENT'                AS TRANSFERTYPE
+FROM BASE b
+    LEFT JOIN OAGWBG_V_EXT_OAGCE_BANK_ACCOUNT_V bank_receiver
+           ON bank_receiver.BANK_ACCOUNT_ID = b.BANKACCOUNTID
+
+ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 ```
+
+**Verify Result (2026-06-19):**
+
+| # | ประเด็น | ระดับ | รายละเอียด |
+|---|---------|-------|-----------|
+| 1 | Typo: `ACTIAL_FLAG` | ❌ Critical | Column header และ BASE CTE ขาด `U` — ควรเป็น `ACTUAL_FLAG` |
+| 2 | DR row: `ACTUAL_FLAG = 'B'` | ❌ Critical | BASE กำหนด `'B'` ให้ทั้งสอง row — ชุดที่ 1 (โอนออก/DR) ควรใช้ `'E'` (Encumbrance) ตาม `ConfirmBudgetTransferAdjust()` line ~16197 |
+| 3 | `REFERENCE1` ใช้ `SYSDATE` | ⚠️ Minor | ค่าเปลี่ยนทุก query — ควรใช้ `BTC.TRANSFERDATE` หรือ `BTC.CREATEON` แทน |
+| 4 | View name `OAGWBG_V_BUDGETTRANSFER_CHANGE` | ✅ | ยืนยันจาก EF context ถูกต้อง |
+| 5 | Logic UNION ALL DR+CR | ✅ | ถูกต้อง |
+| 6 | Bank account JOIN | ✅ | `OAGWBG_BUDGETRECEIVEREFUND_COSTCENTER` ถูกต้อง |
+| 7 | Filter `TRANSFERSTATUSID = 80201` | ✅ | ถูกต้อง |
+
+**สิ่งที่ต้องแก้ก่อน deploy จริง:** Issue 1 (typo) และ Issue 2 (ACTUAL_FLAG DR = 'E')
 
 ---
 
