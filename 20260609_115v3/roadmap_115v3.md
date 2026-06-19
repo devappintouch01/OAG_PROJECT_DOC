@@ -2058,7 +2058,7 @@ ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 | B4 | ItemDetail / Reason ไม่แสดงหลังบันทึก | `BudgetService.cs` | 17504 | View `OagwbgVBudgettransferChange` มี column `Itemdetail` + `Reason` ครบ — map ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
 | B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17304 | API: lookup BudgetCodeDescription แล้วส่งใน `BudgetCodeName` — Frontend: render `"รหัส — ชื่อ"` | ⬜ รอแก้ (display only, low priority) |
 | B6 | TransferIn ของ row N ไปรวมกับ row แรก | `BudgetAdjustDetail.cshtml` | 2530 | Dev แก้ด้วย ID-based grouping — `getTransferInItemsFromDrafts()` iterate ผ่าน `transferOutRows` ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
-| B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2651 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | 🔄 Dev กำลัง test (ยังไม่ checkin) |
+| B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2700 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | ✅ แก้แล้ว (Changeset #19084, verify 2026-06-19) |
 
 ### ✨ New Features
 
@@ -2067,12 +2067,11 @@ ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 | Item 15 | `SaveBudgetAdjustEncumbrance()` — ส่ง interface Encumbrance ขาโอนออก | `BudgetService.cs` | Implemented inside `ConfirmBudgetTransferAdjust()` แล้ว — Giver loop line ~16167, ActualFlag=E, EnteredDr=Totaltransferamount | ✅ Done (bundled ใน ConfirmBudgetTransferAdjust, verify 2026-06-18) |
 | Item 16 | DDL View `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` | `20260609_115v3/OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE.sql` | อ่านจาก OAGWBG_LOG_INTERFACE WHERE TRANSFER_TYPE='ADJUSTMENT' AND ACTION_NAME='SaveBudgetAdjust', LEFT JOIN OAGWBG_BUDGETTRANSFER ผ่าน ATTRIBUTE3 | 🔄 Script พร้อม — รอ deploy บน Oracle |
 
-### ลำดับที่แนะนำ (อัปเดต 2026-06-18)
+### ลำดับที่แนะนำ (อัปเดต 2026-06-19)
 
 ```
-1. B7  (รอ checkin จาก dev)
-2. B5  (display only, low priority)
-3. Item 16  (deploy SQL script บน Oracle — 1 คำสั่ง)
+1. B5  (display only, low priority)
+2. Item 16  (deploy SQL script บน Oracle — แก้ typo ACTIAL_FLAG + DR ACTUAL_FLAG='E' ก่อน)
 ```
 
 ---
