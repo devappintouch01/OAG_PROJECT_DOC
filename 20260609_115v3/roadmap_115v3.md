@@ -2118,8 +2118,10 @@ if (!string.IsNullOrEmpty(giverItem.AccountSegment))
 
 ```
 1. B5  (display only, low priority)
-2. Item 16  (deploy SQL script บน Oracle — แก้ typo ACTIAL_FLAG ก่อน)
+2. Item 16  (deploy SQL script บน Oracle)
 ```
+
+> **Note:** Column header `ACTIAL_FLAG` ใน `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` มี typo (ขาด 'U') — **ตัดสินใจ ignore** เพราะ deploy แล้ว และ consumer ใช้ชื่อนี้อยู่แล้ว การแก้จะ breaking change
 
 ---
 
