@@ -2054,9 +2054,9 @@ ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 |---|-------|------|--------|--------|-------|
 | B1 | TransferIn items ไม่แสดงหลังส่ง interface | `BudgetService.cs` | 17219 | ตัด `x.Budgetadjustid == header.Id` ออก เหลือแค่ `x.Budgettransferid == currentTransferId` + `(x.Budgetadjustid == adj.Id \|\| null)` | ✅ แก้แล้ว (Changeset #19081, verify 2026-06-18) |
 | B2 | Save ครั้งแรกจากหน้า Create ไม่ redirect ไปหน้า Edit | `BudgetController.cs` + `BudgetAdjustDetail.cshtml` | 1537 | redirect ไป `BudgetAdjustDetail?Id={id}` หลัง save สำเร็จ | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
-| B3 | Modal TransferOut ล้างข้อมูลไม่ครบ — btn ยังค้าง enabled | `BudgetAdjustDetail.cshtml` | 2134 | เพิ่ม `$('#btn-AddTransferOut').prop('disabled', true)` ใน `hidden.bs.modal` handler | ⬜ รอแก้ (กระทบ data integrity) |
+| B3 | Modal TransferOut ล้างข้อมูลไม่ครบ — btn ยังค้าง enabled | `BudgetAdjustDetail.cshtml` | 2134 | เพิ่ม `$('#btn-AddTransferOut').prop('disabled', true)` ใน `hidden.bs.modal` handler | ✅ แก้แล้ว (verify 2026-06-22) |
 | B4 | ItemDetail / Reason ไม่แสดงหลังบันทึก | `BudgetService.cs` | 17504 | View `OagwbgVBudgettransferChange` มี column `Itemdetail` + `Reason` ครบ — map ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
-| B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17304 | API: lookup BudgetCodeDescription แล้วส่งใน `BudgetCodeName` — Frontend: render `"รหัส — ชื่อ"` | ⬜ รอแก้ (display only, low priority) |
+| B5 | คอลัมน์รหัสงบประมาณ ไม่แสดงคำอธิบาย | `BudgetService.cs` + `BudgetAdjustDetail.cshtml` | 17304 | Frontend lookup ใน `#SegmentCate` dropdown — แสดงถูกต้องทั้งตอนเลือกและหลังบันทึก | ✅ แก้แล้ว (verify 2026-06-22) |
 | B6 | TransferIn ของ row N ไปรวมกับ row แรก | `BudgetAdjustDetail.cshtml` | 2530 | Dev แก้ด้วย ID-based grouping — `getTransferInItemsFromDrafts()` iterate ผ่าน `transferOutRows` ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
 | B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2700 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | ✅ แก้แล้ว (Changeset #19084, verify 2026-06-19) |
 | B8 | รหัสงบประมาณ (Segment 9) บันทึกลง DB ไม่ถูกต้อง | `BudgetService.cs` | 14586–14598, 14625, 14647 | Extract `segments[8]` จาก `AccountSegment` — ดูรายละเอียดด้านล่าง | ✅ แก้แล้ว (verify 2026-06-19) |
@@ -2175,9 +2175,7 @@ if (!string.IsNullOrEmpty(giverItem.AccountSegment))
 ### ลำดับที่แนะนำ (อัปเดต 2026-06-22)
 
 ```
-1. B9  (critical — TransferIn หลาย item รวมเป็น 1 บันทึกผิด)
-2. B5  (display only, low priority)
-3. Item 16  (deploy SQL script บน Oracle)
+1. Item 16  (deploy SQL script บน Oracle)
 ```
 
 > **Note:** Column header `ACTIAL_FLAG` ใน `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` มี typo (ขาด 'U') — **ตัดสินใจ ignore** เพราะ deploy แล้ว และ consumer ใช้ชื่อนี้อยู่แล้ว การแก้จะ breaking change
