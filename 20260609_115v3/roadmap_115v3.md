@@ -2060,6 +2060,64 @@ ORDER BY WEB_BATCH_NO, LINE_NUMBER;
 | B6 | TransferIn ของ row N ไปรวมกับ row แรก | `BudgetAdjustDetail.cshtml` | 2530 | Dev แก้ด้วย ID-based grouping — `getTransferInItemsFromDrafts()` iterate ผ่าน `transferOutRows` ถูกต้องแล้ว | ✅ แก้แล้ว (verify 2026-06-18 17:44) |
 | B7 | Filter บัญชีผู้รับโอน/ผู้โอน สลับกัน | `BudgetAdjustDetail.cshtml` | 2700 | `giver-bank`: ลบ filter dept — `receiver-bank`: เพิ่ม filter `Departmentid == itemDeptId` | ✅ แก้แล้ว (Changeset #19084, verify 2026-06-19) |
 | B8 | รหัสงบประมาณ (Segment 9) บันทึกลง DB ไม่ถูกต้อง | `BudgetService.cs` | 14586–14598, 14625, 14647 | Extract `segments[8]` จาก `AccountSegment` — ดูรายละเอียดด้านล่าง | ✅ แก้แล้ว (verify 2026-06-19) |
+| B9 | รายการรับโอนของหลาย TransferOut item รวมเป็นรายการเดียว ที่ item สุดท้าย | `BudgetService.cs` | 14683–14693 | ดูรายละเอียดด้านล่าง | ⬜ รอแก้ |
+
+### B9 — รายการรับโอนรวมกัน ชี้ไปที่ TransferOut item สุดท้าย
+
+**พบ:** 2026-06-22
+
+**อาการ:** เมื่อสร้าง TransferOut หลายรายการ โดยแต่ละรายการมี TransferIn item ที่มี key เดียวกัน (Dept, CostCenter, Category, Plan, Product, Activity) หลังบันทึก TransferIn รวมเป็นรายการเดียว และ `Budgetadjustid` ชี้ไปที่ TransferOut item สุดท้าย
+
+**Root Cause — `SaveTransferModifyItem()` ([BudgetService.cs](../OAGBudget.API/Services/Repository/BudgetService.cs) line 14683):**
+
+`incomingView` lookup ไม่ filter ด้วย `Budgetadjustid` ทำให้ TransferOut item ที่ 2, 3, ... find J-type record ของ item ก่อนหน้าแล้วทับ:
+
+```csharp
+// เดิม — ค้นหา J-type record โดยไม่ระบุ Budgetadjustid
+var incomingView = await _context.OagwbgVBudgetreceives.FirstOrDefaultAsync(x =>
+    x.Categoryid == searchTargetCategoryId
+    && x.Departmentid == searchTargetDepartmentId
+    && x.Costcenterid == searchTargetCostCenterId
+    && x.Budgetyear == targetYear
+    && x.Budgetreceivetype == "J"
+    && x.Budgettransferid == currentHeader.Id
+    // ← ขาด: && x.Budgetadjustid == resolvedBudgetAdjustId
+    ...);
+```
+
+เมื่อ find เจอ record เดิม:
+- **line 14746**: `target.Budgetadjustid = resolvedBudgetAdjustId` → ย้าย pointer ไปที่ adjust ล่าสุด
+- **line 14747**: `target.Totalreceiveamount += inAmount` → บวกยอดสะสม
+
+| TransferOut | J-type ที่คาดหวัง | สิ่งที่เกิดขึ้น |
+|---|---|---|
+| #1 (adj1), amount=1000 | J-type ใหม่, adj1, 1000 | ✅ สร้างถูก |
+| #2 (adj2), amount=2000 | J-type ใหม่, adj2, 2000 | ❌ find record เดิม → adj2, 3000 |
+| #N (adjN), amount=X | J-type ใหม่, adjN, X | ❌ find record เดิม → adjN, Σall |
+
+**Fix:**
+
+```csharp
+// เพิ่ม filter Budgetadjustid เพื่อ scope ให้จำเพาะต่อ adjust นั้นๆ
+var incomingView = await _context.OagwbgVBudgetreceives.FirstOrDefaultAsync(x =>
+    x.Categoryid == searchTargetCategoryId
+    && x.Departmentid == searchTargetDepartmentId
+    && x.Costcenterid == searchTargetCostCenterId
+    && x.Budgetyear == targetYear
+    && x.Budgetreceivetype == "J"
+    && x.Budgettransferid == currentHeader.Id
+    && x.Budgetadjustid == resolvedBudgetAdjustId  // ✅ เพิ่มบรรทัดนี้
+    && (string.IsNullOrEmpty(searchTargetPlanId) || x.Budgetplanid == searchTargetPlanId)
+    && (string.IsNullOrEmpty(searchTargetProductId) || x.Productid == searchTargetProductId)
+    && (string.IsNullOrEmpty(searchTargetActivityId) || x.Activityid == searchTargetActivityId)
+    && (string.IsNullOrEmpty(searchTargetBudgetSourceId) || x.Budgetsourceid == searchTargetBudgetSourceId));
+```
+
+> **หมายเหตุ**: ต้องยืนยันว่า `OagwbgVBudgetreceives` entity มี property `Budgetadjustid` — ถ้าเป็น view ที่ไม่ map column นี้ให้ใช้ `_context.OagwbgBudgetreceives` (base table) แทน
+
+**ไฟล์ที่ต้องแก้:** `BudgetService.cs` line **14683** — เพิ่มเงื่อนไขเดียว
+
+---
 
 ### B8 — รหัสงบประมาณ (Segment 9) บันทึกลง DB ไม่ถูกต้อง
 
@@ -2114,11 +2172,12 @@ if (!string.IsNullOrEmpty(giverItem.AccountSegment))
 | Item 15 | `SaveBudgetAdjustEncumbrance()` — ส่ง interface Encumbrance ขาโอนออก | `BudgetService.cs` | Implemented inside `ConfirmBudgetTransferAdjust()` แล้ว — Giver loop line ~16167, ActualFlag=E, EnteredDr=Totaltransferamount | ✅ Done (bundled ใน ConfirmBudgetTransferAdjust, verify 2026-06-18) |
 | Item 16 | DDL View `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` | `20260609_115v3/OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE.sql` | อ่านจาก OAGWBG_LOG_INTERFACE WHERE TRANSFER_TYPE='ADJUSTMENT' AND ACTION_NAME='SaveBudgetAdjust', LEFT JOIN OAGWBG_BUDGETTRANSFER ผ่าน ATTRIBUTE3 | 🔄 Script พร้อม — รอ deploy บน Oracle |
 
-### ลำดับที่แนะนำ (อัปเดต 2026-06-19)
+### ลำดับที่แนะนำ (อัปเดต 2026-06-22)
 
 ```
-1. B5  (display only, low priority)
-2. Item 16  (deploy SQL script บน Oracle)
+1. B9  (critical — TransferIn หลาย item รวมเป็น 1 บันทึกผิด)
+2. B5  (display only, low priority)
+3. Item 16  (deploy SQL script บน Oracle)
 ```
 
 > **Note:** Column header `ACTIAL_FLAG` ใน `OAGWBG_V_BUDGET_ADJUSTMENT_TRANSFER_INTERFACE` มี typo (ขาด 'U') — **ตัดสินใจ ignore** เพราะ deploy แล้ว และ consumer ใช้ชื่อนี้อยู่แล้ว การแก้จะ breaking change
