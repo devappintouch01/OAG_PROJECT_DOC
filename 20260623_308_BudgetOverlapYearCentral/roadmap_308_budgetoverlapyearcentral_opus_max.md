@@ -558,13 +558,15 @@ bool showActionTabs = Model.Statusid == 20202 || Model.Statusid == 90102 || Mode
 > ลำดับลงมือ: **DB → DAL → Models → API → MVC → View** (จากชั้นในออกชั้นนอก) เพื่อให้ build ผ่านทีละชั้น
 > code block ด้านล่างอ้างอิงโค้ด **ของจริง ณ 2026-06-23** (อ่านจากไฟล์ในระบบ) — ส่วน "After" เป็น **ข้อเสนอ** ยังไม่ได้แก้จริง
 
+> **📋 As-Built Log** — อัปเดต 2026-06-23 (TFS Changeset #19113)
+
 ---
 
 ### ✅ 13.1 Oracle DB — SQL script แยก (**R0, ต้อง DBA review + backup**)
 
-- [ ] **`OAGWBG_BUDGETRESERVEDITEM`** — เพิ่ม column เก็บเลขที่เงินกันเพิ่ม (มติ 1)
-- [ ] **`OAGWBG_V_BUDGETRESERVEDITEM`** — `CREATE OR REPLACE` เพิ่ม column ใหม่ใน select list
-- [ ] **`OAGWBG_FN_GET_RESERVE_PERIOD`** — function ใหม่ (single source ตรรกะช่วงเวลา, มติ 5)
+- [x] **`OAGWBG_BUDGETRESERVEDITEM`** — เพิ่ม column `RESERVEDNO_ADD VARCHAR2(250)` *(as-built: ชื่อต่างจากแผน `EXPAND_RESERVENO` — DBA รันแล้วบน PREPROD)*
+- [x] **`OAGWBG_V_BUDGETRESERVEDITEM`** — CREATE OR REPLACE เพิ่ม column `RESERVEDNO_ADD` ใน select list *(DBA รันแล้ว)*
+- [ ] **`OAGWBG_FN_GET_RESERVE_PERIOD`** — ข้ามได้ *(C# `BudgetPeriodHelper.GetPeriod()` ทำหน้าที่เดียวกัน ไม่มี stored proc อื่น call ตรง)*
 
 ```sql
 -- ① เพิ่มคอลัมน์ "เลขที่เงินกันเพิ่ม"  (เก็บแยกจาก TRANSFERNO ตามมติ 1)
@@ -607,9 +609,9 @@ DROP FUNCTION OAGWBG.OAGWBG_FN_GET_RESERVE_PERIOD;
 
 ### ✅ 13.2 DAL — `OAGBudget.DAL` (R2)
 
-- [ ] เพิ่ม property `ExpandReserveno` ใน [OagwbgBudgetreserveditem.cs](OAGBudget.DAL/Models/OagwbgBudgetreserveditem.cs)
-- [ ] เพิ่ม property `ExpandReserveno` ใน [OagwbgVBudgetreserveditem.cs](OAGBudget.DAL/Models/OagwbgVBudgetreserveditem.cs)
-- [ ] map column ทั้ง 2 entity ใน [OAGDBContextBase.cs](OAGBudget.DAL/Models/OAGDBContextBase.cs)
+- [x] เพิ่ม property `Reservedno` ใน [OagwbgBudgetreserveditem.cs](OAGBudget.DAL/Models/OagwbgBudgetreserveditem.cs) *(as-built: property name = `Reservedno` map `RESERVEDNO_ADD`)*
+- [x] เพิ่ม property `Reservedno` ใน [OagwbgVBudgetreserveditem.cs](OAGBudget.DAL/Models/OagwbgVBudgetreserveditem.cs)
+- [x] map column ทั้ง 2 entity ใน [OAGDBContextBase.cs](OAGBudget.DAL/Models/OAGDBContextBase.cs)
 
 **model** ([OagwbgBudgetreserveditem.cs](OAGBudget.DAL/Models/OagwbgBudgetreserveditem.cs) — ต่อท้ายกลุ่ม `Overlapyear/Overlapround/Transferno` ที่มีอยู่แล้ว L116-118):
 
@@ -637,9 +639,9 @@ entity.Property(e => e.ExpandReserveno)
 
 ### ✅ 13.3 Models / DTOs — `OAGBudget.Models` (R2)
 
-- [ ] เพิ่มโครงสร้าง group level ใน [BudgetReservedCentralViewModel.cs](OAGBudget.Models/ViewModel/BudgetReservedCentralViewModel.cs)
-- [ ] เพิ่ม period flags (ส่งจาก server, มติ 4) ใน ViewModel
-- [ ] เพิ่ม `Round`/`ExpandReserveno` ต่อ item ใน [BudgetReservedCentralFormModel.cs](OAGBudget.Models/Data/BudgetReservedCentralFormModel.cs)
+- [x] เพิ่มโครงสร้าง group level `ExpandGroup` (+ `CheckedKeys HashSet`) ใน [BudgetReservedCentralViewModel.cs](OAGBudget.Models/ViewModel/BudgetReservedCentralViewModel.cs)
+- [x] เพิ่ม period flags `IsReservePeriod / IsExpandPeriod / IsReserveTabLocked` ใน ViewModel
+- [x] `BudgetReservedCentralFormModel` — ไม่ต้องแก้ *(Overlapround ถูก handle ใน API จาก header.Roundinterface โดยตรง ไม่ต้องส่งผ่าน form)*
 
 ```csharp
 // โครงสร้าง group level (ใช้ render หัวกลุ่ม "ประวัติ + รอบปัจจุบัน")
@@ -663,12 +665,12 @@ public bool IsReserveTabLocked { get; set; } // มติ 4: lock tab กัน�
 
 ---
 
-### 🔴 13.4 API Service — `OAGBudget.API` / [BudgetService.cs](OAGBudget.API/Services/Repository/BudgetService.cs) (**R1**)
+### ✅ 13.4 API Service — `OAGBudget.API` / [BudgetService.cs](OAGBudget.API/Services/Repository/BudgetService.cs) (**R1**)
 
-- [ ] 🔴 `SynchronizeReservedItemsAsync` (~L21493) — **replace → append-by-round**
-- [ ] `GetBudgetOverlapYearCentralList` (~L19435) — merge round-aware → คืน group level
-- [ ] `SaveBudgetReservedCentrall` (~L21177) — เซ็ต `Overlapround/Overlapyear/ExpandReserveno/Transferno`
-- [ ] `ConfirmBudgetReserved` (~L19166) — `Budgetyear+1` เฉพาะรอบ ก.ย.(คี่) (มติ 5)
+- [x] 🔴 `SynchronizeReservedItemsAsync` — append-by-round: ลบเฉพาะ `Overlapround == currentRound && Approve == null`; เซ็ต `Overlapround/Overlapyear/Reservedno` ทุก insert
+- [x] `GetBudgetOverlapYearCentralList` — populate `ExpandGroupsHasObligation` (PO) + `ExpandGroupsNoObligation` (PR) grouped by Overlapround; PR balance refresh จาก view สำหรับ current round (มติ 6)
+- [x] `ConfirmBudgetReserved` — period guard (block นอกช่วง, มติ ก); `Budgetyear+1` เฉพาะ RESERVE round (มติ 5)
+- [x] `SynchronizeReservedItemsAsync` (first-time path) — สร้าง ExpandGroup เดียวจาก `ListExpand*` เมื่อยังไม่มี savedItems
 
 **(A) 🔴 `SynchronizeReservedItemsAsync` — ปัจจุบันลบทิ้งหมด (L21500-21507):**
 
@@ -751,9 +753,9 @@ async Task UpdateHeaderAndItemsStatusAsync()
 
 ### ✅ 13.5 MVC Controller + Proxy — `OAGBudget` (R2)
 
-- [ ] [Controllers/BudgetController.cs](OAGBudget/Controllers/BudgetController.cs) `BudgetOverlapYearCentralDetail` (~L3017) — คำนวณช่วง/รอบ → ส่ง flags ลง ViewModel
-- [ ] `SaveBudgetReservedCentrall` (~L3331) — ส่ง `Round/ExpandReserveno` ไป API
-- [ ] [Services/Repository/BudgetService.cs](OAGBudget/Services/Repository/BudgetService.cs) (proxy ~L2115) — อัปเดต DTO mapping field ใหม่
+- [x] `BudgetOverlapYearCentralDetail` — set `IsReservePeriod / IsExpandPeriod / IsReserveTabLocked` ลง ViewModel ก่อน return View
+- [x] `SaveBudgetReservedCentrall` — ไม่ต้องแก้ *(Overlapround/Reservedno ถูก compute ฝั่ง API service โดยตรงจาก header)*
+- [x] proxy BudgetService — ไม่ต้องแก้ DTO mapping เพิ่ม *(fields ใหม่ผ่าน ViewModel แล้ว)*
 
 ```csharp
 // BudgetOverlapYearCentralDetail() — คำนวณช่วงเวลาฝั่ง server (เรียก FN ใหม่ผ่าน service)
@@ -769,9 +771,9 @@ model.IsReserveTabLocked = model.Roundinterface != null;   // confirm รอบ�
 
 ### ✅ 13.6 Views / Partials — `OAGBudget` (R2)
 
-- [ ] [BudgetOverlapYearCentralDetail.cshtml](OAGBudget/Views/Budget/BudgetOverlapYearCentralDetail.cshtml#L26) — เพิ่มเงื่อนไขช่วงเวลา/รอบ ใน `isLocked` + lock tab กันเงิน & Header (มติ 4)
-- [ ] [_tableExpandHasObligation.cshtml](OAGBudget/Views/Budget/_partialView/_tableExpandHasObligation.cshtml) — render group header (label `เลขที่เงินกัน.n`) + คอลัมน์ "เลขที่เงินกันเพิ่ม" + รอบเก่า read-only
-- [ ] [_tableExpandNoObligation.cshtml](OAGBudget/Views/Budget/_partialView/_tableExpandNoObligation.cshtml) — render group header (label `<ประเภท> - ปีงบประมาณ {ปี}` ไม่มี `.n`) + รอบเก่า read-only
+- [x] [BudgetOverlapYearCentralDetail.cshtml](OAGBudget/Views/Budget/BudgetOverlapYearCentralDetail.cshtml) — `isReserveTabLocked` wires tab กันเงิน lock icon + header fields disabled + `applyOverlapLock()` JS; period guard บน btnConfirm
+- [x] [_tableExpandHasObligation.cshtml](OAGBudget/Views/Budget/_partialView/_tableExpandHasObligation.cshtml) — model เปลี่ยนเป็น `List<ExpandGroup>`; group header rows; history read-only; คอลัมน์ "เลขที่เงินกันเพิ่ม" ต่อแถว
+- [x] [_tableExpandNoObligation.cshtml](OAGBudget/Views/Budget/_partialView/_tableExpandNoObligation.cshtml) — model เปลี่ยนเป็น `List<ExpandGroup>`; group header rows; history read-only
 
 **isLocked ปัจจุบัน (L25-33):**
 
@@ -796,18 +798,27 @@ bool canEditExpand = Model.IsExpandPeriod && !isLocked;
 
 ---
 
-### 📊 13.7 สรุปจำนวน + ลำดับลงมือ
+### 📊 13.7 สรุปสถานะ As-Built (อัปเดต 2026-06-23)
 
-| ลำดับ | ชั้น | จำนวน | ความเสี่ยง | จุดสำคัญ |
-|---|---|---|---|---|
-| 1 | Oracle SQL | 3 objects | **R0** | DBA review + rollback script |
-| 2 | DAL | 3 ไฟล์ | R2 | property + mapping ตรง pattern เดิม |
-| 3 | Models | 3 ไฟล์ | R2 | `ExpandGroup` + period flags |
-| 4 | API Service | 1 ไฟล์ (4 เมธอด) | **R1** | 🔴 เริ่ม `SynchronizeReservedItemsAsync` |
-| 5 | MVC + Proxy | 2 ไฟล์ | R2 | ส่ง flags ฝั่ง server |
-| 6 | View / Partial | 3 ไฟล์ | R2 | group header + read-only ประวัติ |
-| | **รวม** | **~15 ไฟล์ + 3 Oracle** | | |
+| ชั้น | สถานะ | หมายเหตุ |
+|---|---|---|
+| Oracle SQL | ✅ 2/3 done | table + view รันแล้ว; FN_GET_RESERVE_PERIOD ข้าม (C# แทน) |
+| DAL | ✅ done | property `Reservedno` map `RESERVEDNO_ADD` |
+| Models | ✅ done | `ExpandGroup` + `CheckedKeys` + period flags |
+| API Service | ✅ done | append-by-round, ExpandGroups, period guard, PR refresh |
+| MVC Controller | ✅ done | period flags → ViewModel |
+| View / Partial | ✅ done | group headers, read-only history, Reservedno column |
+| **TFS Checkin** | ✅ **Changeset #19113** | 5 ไฟล์ checkin 2026-06-23 23:09 |
 
-> ✅ มติ BA ครบ 6 ข้อแล้ว (section 11) → เริ่ม implementation ได้
-> ⚠️ ทุกการแก้ `.cs` ต้อง `dotnet build` ให้ผ่านก่อน checkin (CLAUDE.md ข้อ 6) · source code = TFS / เอกสารนี้ = Git
+---
+
+### 🔲 13.8 งานที่เหลือ
+
+| # | งาน | ระดับ | ใคร |
+|---|---|---|---|
+| 1 | **Unit tests** `BudgetPeriodHelper.GetPeriod()` — 6 boundary cases | เล็ก | Dev |
+| 2 | **Oracle function** `OAGWBG_FN_GET_RESERVE_PERIOD` | optional | DBA |
+| 3 | **List screen filters** (รอบ/ปี) บนหน้า BudgetOverlapYearCentralList | optional | Dev |
+
+> Unit test ไม่ต้องต่อ DB — `BudgetPeriodHelper.GetPeriod()` เป็น pure function รับ `DateTime` คืน `BudgetPeriod`
 
