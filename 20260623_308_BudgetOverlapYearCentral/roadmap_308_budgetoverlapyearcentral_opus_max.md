@@ -479,4 +479,20 @@ bool showActionTabs = Model.Statusid == 20202 || Model.Statusid == 90102 || Mode
 
 ---
 
+## 12. ภาคผนวก ค — Mockup หน้าจอ Group Level (ไฟล์แยก)
+
+ตัวอย่างหน้าจอ (static HTML, เปิดในเบราว์เซอร์) ประกอบการตัดสิน **Q2 / ข้อ 3 (group level)**:
+
+➡️ **[mockup_group_level_308.html](mockup_group_level_308.html)** (self-contained ไม่พึ่ง CDN)
+
+แสดง 2 tab พร้อมหัวกลุ่ม "ประวัติ + รอบปัจจุบัน":
+- **PR (ไม่มีหนี้):** หัวกลุ่ม = `ขยายเวลา ครั้งที่ {n} — ปีงบประมาณ {OVERLAPYEAR}`
+- **PO (มีหนี้):** หัวกลุ่ม = `เลขที่เงินกัน {Transferno}.{n}` (เช่น `68030009.1`, `.2`)
+- แถวประวัติ = read-only · แถวรอบปัจจุบัน = กรอกช่อง "จำนวนเงินขยาย" ได้
+- ท้ายไฟล์มี checklist 4 ข้อให้ BA เคาะ (label, จำนวนชั้น, PR ต้องมี `.n` ไหม, พับกลุ่มได้ไหม)
+
+> ข้อมูลตัวอย่างอิงของจริง PREPROD (booknumber 169xxxxx/269xxxxx, เลขที่เงินกัน 68030009) — ยังไม่ผูกข้อมูลจริง/ไม่ใช่โค้ดระบบ
+
+---
+
 *จัดทำโดย Claude Opus 4.8 — analysis only, ไม่มีการแก้ไข source code ของระบบ ตาม prompt ข้อ 4 (DB query เป็น read-only)*

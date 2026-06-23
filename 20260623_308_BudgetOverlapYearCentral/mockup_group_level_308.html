@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup 308 — Group Level การขยายเวลา รอบที่ n</title>
+<style>
+  :root{
+    --primary:#009ef7; --primary-soft:#e9f6ff; --primary-line:#bfe3fb;
+    --history:#f4f6f9; --history-band:#e4e8ef; --current-band:#e9f6ff;
+    --txt:#181c32; --muted:#7e8299; --line:#e7eaf0; --ok:#50cd89; --warn:#ffc700;
+  }
+  *{box-sizing:border-box}
+  body{font-family:"Segoe UI",Tahoma,"Sarabun",sans-serif;background:#f5f8fa;color:var(--txt);margin:0;padding:24px;font-size:13px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.04);padding:22px;margin-bottom:20px}
+  h1{font-size:20px;margin:0 0 4px}
+  h2{font-size:15px;margin:18px 0 8px}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:8px}
+  .banner{background:#fff8dd;border:1px solid #ffe79a;border-radius:8px;padding:10px 14px;font-size:12px;margin:10px 0}
+  .banner b{color:#b48a00}
+  /* tabs */
+  .tabs{display:flex;gap:6px;border-bottom:2px solid var(--line);margin-bottom:0}
+  .tab{padding:9px 16px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#f1f3f7;color:var(--muted);cursor:pointer;font-weight:600}
+  .tab.active{background:#fff;color:var(--primary);border-color:var(--primary-line);box-shadow:0 -2px 0 var(--primary) inset}
+  .pane{display:none;border:1px solid var(--line);border-top:none;border-radius:0 0 10px 10px;padding:16px;background:#fff}
+  .pane.active{display:block}
+  .toolbar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:10px}
+  .toolbar input{width:130px;text-align:center}
+  table{width:100%;border-collapse:collapse}
+  thead th{background:var(--primary-soft);color:#0b5c8a;font-weight:700;font-size:12px;padding:8px 6px;border-bottom:2px solid var(--primary-line);text-align:center;white-space:nowrap}
+  tbody td{padding:7px 6px;border-bottom:1px dashed var(--line);text-align:center;vertical-align:middle}
+  td.l{text-align:left} td.r{text-align:right}
+  /* group band */
+  tr.grp td{background:var(--history-band);font-weight:700;text-align:left;padding:9px 10px;border-bottom:1px solid #d3d9e3}
+  tr.grp.current td{background:var(--current-band);color:#0b5c8a}
+  tr.grp .chev{display:inline-block;width:16px}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:10px;margin-left:8px}
+  .pill.hist{background:#dfe3ea;color:#5b6172}
+  .pill.cur{background:#d7f0ff;color:#0b6aa2}
+  /* rows */
+  tr.hist td{background:var(--history);color:#5b6172}
+  tr.hist .ro{color:#5b6172}
+  input.cell{border:1px solid #cfd5df;border-radius:5px;padding:4px 6px;font-size:12px;width:100%}
+  input.amt{text-align:right;max-width:110px}
+  input.note{max-width:150px}
+  .ro{display:inline-block;padding:4px 0;color:#5b6172}
+  .status-ok{color:#3fa46a;font-weight:600}
+  .chk{transform:scale(1.05)}
+  tfoot td{padding:9px 6px;font-weight:700;text-align:right;background:#fafbfc}
+  tfoot input{width:120px;text-align:center}
+  /* legend + callouts */
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid #cfd5df}
+  .ba{background:#fdeef0;border:1px solid #f7c9d0;border-radius:8px;padding:9px 12px;margin-top:12px;font-size:12px}
+  .ba b{color:#c0334a}
+  .note-ex{background:#eef7ff;border:1px dashed var(--primary-line);border-radius:8px;padding:9px 12px;margin-top:10px;font-size:12px;color:#0b5c8a}
+  code{background:#eef1f5;padding:1px 5px;border-radius:4px;font-size:12px}
+  .foot{color:var(--muted);font-size:11px;text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h1>ตัวอย่างหน้าจอ (Mockup) — Group Level การขยายเวลา รอบที่ n</h1>
+    <div class="sub">เอกสารประกอบ <b>roadmap_308_budgetoverlapyearcentral_opus_max.md</b> · หน้า "โอนงปม. เข้าบัญชีเงินกัน" (BudgetOverlapYearCentral) · 2026-06-23</div>
+    <div class="banner">
+      🎯 <b>ใช้ประกอบการตัดสิน Q2 / ข้อ 3 (ตาราง BA):</b> รูปแบบ "หัวข้อกลุ่ม (group level)" ที่โชว์ประวัติการขยายเวลาแต่ละรอบ —
+      ปัจจุบันตารางเป็น <b>flat</b> (แถวเดียวรวด ไม่มีกลุ่ม/ไม่มีประวัติ) · ตัวอย่างนี้เสนอแบบ <b>2 ชั้น</b> (หัวกลุ่ม + รายการ)
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-t="pr" onclick="sw('pr')">การขยายเวลา-ไม่มีหนี้ (PR)</div>
+      <div class="tab" data-t="po" onclick="sw('po')">การขยายเวลา-มีหนี้ (PO)</div>
+    </div>
+
+    <!-- ============== PR ============== -->
+    <div class="pane active" id="pane-pr">
+      <div class="toolbar"><span class="sub" style="margin:0">สรุปยอดเงินคงเหลือรวมทั้งหมด :</span><input class="cell" value="53,000.00" readonly></div>
+      <table>
+        <thead>
+          <tr>
+            <th width="42"><input type="checkbox" class="chk"></th>
+            <th width="60">ลำดับ</th><th>เลขที่เอกสาร</th><th>รายการ</th><th>ยอดเงิน</th>
+            <th>ชื่อผู้ขาย</th><th>จำนวนเงินคงเหลือ</th><th>จำนวนเงินขยาย</th><th>เหตุผล</th><th>สถานะ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- history round 1 -->
+          <tr class="grp"><td colspan="10"><span class="chev">▾</span> ขยายเวลา ครั้งที่ 1 — ปีงบประมาณ 2569 <span class="pill hist">ประวัติ (read-only)</span></td></tr>
+          <tr class="hist">
+            <td><input type="checkbox" checked disabled></td><td>1</td><td>16900360</td>
+            <td class="l">ค่าจัดซื้อวัสดุสำนักงาน</td><td class="r">1,000.00</td><td>-</td>
+            <td class="r">1,000.00</td><td class="r"><span class="ro">1,000.00</span></td><td><span class="ro">—</span></td><td class="status-ok">อนุมัติ</td>
+          </tr>
+          <tr class="hist">
+            <td><input type="checkbox" checked disabled></td><td>2</td><td>16900361</td>
+            <td class="l">ค่าจ้างเหมาบริการ</td><td class="r">2,000.00</td><td>-</td>
+            <td class="r">2,000.00</td><td class="r"><span class="ro">2,000.00</span></td><td><span class="ro">—</span></td><td class="status-ok">อนุมัติ</td>
+          </tr>
+          <!-- current round 2 -->
+          <tr class="grp current"><td colspan="10"><span class="chev">▾</span> ขยายเวลา ครั้งที่ 2 — ปีงบประมาณ 2570 <span class="pill cur">รอบปัจจุบัน — ดึงจาก View PR (ยอดคงเหลือสด)</span></td></tr>
+          <tr>
+            <td><input type="checkbox" class="chk"></td><td>1</td><td>16900360</td>
+            <td class="l">ค่าจัดซื้อวัสดุสำนักงาน</td><td class="r">1,000.00</td><td>-</td>
+            <td class="r">800.00</td><td><input class="cell amt" value="0.00"></td><td><input class="cell note" placeholder="เหตุผล…"></td><td>—</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="chk"></td><td>2</td><td>16900363</td>
+            <td class="l">ค่าซ่อมแซมครุภัณฑ์</td><td class="r">51,000.00</td><td>-</td>
+            <td class="r">50,000.00</td><td><input class="cell amt" value="0.00"></td><td><input class="cell note" placeholder="เหตุผล…"></td><td>—</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr><td colspan="7">สรุปยอดเงินคงเหลือรวมจากรายการที่เลือก :</td><td colspan="3"><input class="cell" value="0.00" readonly></td></tr>
+        </tfoot>
+      </table>
+      <div class="note-ex">📌 ฝั่ง PR (ไม่มีหนี้): หัวกลุ่ม = <code>ขยายเวลา ครั้งที่ {n} — ปีงบประมาณ {OVERLAPYEAR}</code> · ใช้แค่ "ครั้งที่ n" (ไม่มีเลข <code>.n</code> แบบ PO)</div>
+    </div>
+
+    <!-- ============== PO ============== -->
+    <div class="pane" id="pane-po">
+      <div class="toolbar"><span class="sub" style="margin:0">สรุปยอดเงินคงเหลือรวมทั้งหมด :</span><input class="cell" value="66,084.11" readonly></div>
+      <table>
+        <thead>
+          <tr>
+            <th width="42"><input type="checkbox" class="chk"></th>
+            <th width="60">ลำดับ</th><th>เลขที่เอกสาร</th><th>รายการ</th><th>ยอดเงิน</th>
+            <th>ชื่อผู้ขาย</th><th>จำนวนเงินคงเหลือ</th><th>จำนวนเงินขยาย</th><th>เหตุผล</th><th>สถานะ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- history .1 -->
+          <tr class="grp"><td colspan="10"><span class="chev">▾</span> เลขที่เงินกัน <b>68030009.1</b> <span class="pill hist">ประวัติรอบก่อน (read-only)</span></td></tr>
+          <tr class="hist">
+            <td><input type="checkbox" checked disabled></td><td>1</td><td>26900145</td>
+            <td class="l">ครุภัณฑ์คอมพิวเตอร์ (สัญญา)</td><td class="r">3,000.00</td><td class="l">บริษัท ก จำกัด</td>
+            <td class="r">3,000.00</td><td class="r"><span class="ro">10.00</span></td><td><span class="ro">—</span></td><td class="status-ok">อนุมัติ</td>
+          </tr>
+          <!-- current .2 -->
+          <tr class="grp current"><td colspan="10"><span class="chev">▾</span> เลขที่เงินกัน <b>68030009.2</b> <span class="pill cur">รอบปัจจุบัน — ดึงจาก View PO</span></td></tr>
+          <tr>
+            <td><input type="checkbox" class="chk"></td><td>1</td><td>26900205</td>
+            <td class="l">งานจ้างเหมาบำรุงรักษาระบบ</td><td class="r">63,084.11</td><td class="l">บริษัท ข จำกัด</td>
+            <td class="r">63,084.11</td><td><input class="cell amt" value="0.00"></td><td><input class="cell note" placeholder="เหตุผล…"></td><td>—</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr><td colspan="7">สรุปยอดเงินคงเหลือรวมจากรายการที่เลือก :</td><td colspan="3"><input class="cell" value="0.00" readonly></td></tr>
+        </tfoot>
+      </table>
+      <div class="note-ex">📌 ฝั่ง PO (มีหนี้): หัวกลุ่ม = <code>เลขที่เงินกัน {header.Transferno}.{n}</code> เช่น <code>68030009.1</code>, <code>.2</code> … (เก็บใน column ใหม่ <code>EXPAND_RESERVENO</code>)</div>
+    </div>
+
+    <div class="legend">
+      <span><span class="sw" style="background:var(--history)"></span> แถวประวัติ (รอบก่อน) — read-only</span>
+      <span><span class="sw" style="background:#fff"></span> แถวรอบปัจจุบัน — กรอกได้ (ช่อง "จำนวนเงินขยาย")</span>
+      <span><span class="sw" style="background:var(--history-band)"></span> หัวกลุ่ม (group level)</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>จุดที่ขอ BA ตัดสิน (Q2 / ข้อ 3)</h2>
+    <div class="ba">❶ <b>ข้อความหัวกลุ่ม (label)</b> — เอาตามตัวอย่างนี้ไหม? เทียบกับตัวอย่างใน requirement เดิมที่เขียนว่า
+      <code>ขยายเวลา-ปีงบประมาณ 2569</code>, <code>กันเงินเหลื่อมปี</code>, <code>ปีงบประมาณ 2570</code></div>
+    <div class="ba">❷ <b>จำนวนชั้น</b> — เสนอ <b>2 ชั้น</b> (หัวกลุ่ม + รายการ) · ถ้าต้องการ 3 ชั้น (เช่น ปี &gt; ครั้ง &gt; รายการ) ต้องระบุ</div>
+    <div class="ba">❸ <b>PR ต้องมีเลข <code>.n</code> เหมือน PO ไหม</b> หรือใช้ "ครั้งที่ n" พอ (ตัวอย่างนี้ PR ใช้ "ครั้งที่ n")</div>
+    <div class="ba">❹ <b>รอบปัจจุบันให้ "พับเก็บ (collapse)" ประวัติได้ไหม</b> — ตัวอย่างนี้กางทุกกลุ่ม</div>
+    <div class="foot">Mockup static — ค่าตัวอย่างอิงข้อมูลจริง PREPROD (booknumber 169xxxxx/269xxxxx, เลขที่เงินกัน 68030009) · ยังไม่ผูกข้อมูล/ไม่ใช่โค้ดจริง</div>
+  </div>
+
+</div>
+<script>
+  function sw(t){
+    document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active',e.dataset.t===t));
+    document.querySelectorAll('.pane').forEach(e=>e.classList.remove('active'));
+    document.getElementById('pane-'+t).classList.add('active');
+  }
+</script>
+</body>
+</html>
