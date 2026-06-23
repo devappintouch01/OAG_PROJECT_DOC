@@ -68,6 +68,7 @@
 สถาปัตยกรรม **2 ชั้น**: Frontend MVC เรียก API ผ่าน HTTP (frontend มี proxy service ของตัวเอง) แล้ว API เรียก DAL/Oracle
 
 ### 2.1 UI — Views (Frontend `OAGBudget`)
+
 | ไฟล์ | บทบาท | ต้องแก้? |
 |---|---|---|
 | [BudgetOverlapYearCentralList.cshtml](OAGBudget/Views/Budget/BudgetOverlapYearCentralList.cshtml) | หน้า list/ค้นหา | อาจแก้ (filter รอบ/ปี) |
@@ -80,6 +81,7 @@
 | [_partialView/_tableSummaryBalance.cshtml](OAGBudget/Views/Budget/_partialView/_tableSummaryBalance.cshtml) | สรุปยอด | review |
 
 ### 2.2 Frontend Controller + Proxy Service
+
 | ไฟล์ / Action | บรรทัด | บทบาท |
 |---|---|---|
 | [Controllers/BudgetController.cs](OAGBudget/Controllers/BudgetController.cs) `BudgetOverlapYearCentralList()` | ~3260 | render list |
@@ -90,6 +92,7 @@
 | [Services/Repository/BudgetService.cs](OAGBudget/Services/Repository/BudgetService.cs) `SubmitBudgetReservedtDetail` | ~2115 | proxy → API `/Budget/ConfirmBudgetReserved` |
 
 ### 2.3 API Controller + Service (Backend `OAGBudget.API`)
+
 | ไฟล์ / Endpoint | บรรทัด | บทบาท |
 |---|---|---|
 | [Controllers/BudgetController.cs](OAGBudget.API/Controllers/BudgetController.cs) `GET GetBudgetOverlapYearCentralDetail/{id}` | ~2006 | |
@@ -106,6 +109,7 @@
 | `SaveInterface(...)` | 11696 | เขียน log interface → GL |
 
 ### 2.4 DAL Models / DbContext
+
 | ไฟล์ | Map ไปยัง (Oracle) | บรรทัดใน DbContext |
 |---|---|---|
 | [OagwbgBudgetreserveditem.cs](OAGBudget.DAL/Models/OagwbgBudgetreserveditem.cs) | TABLE `OAGWBG_BUDGETRESERVEDITEM` | 4727 |
@@ -116,6 +120,7 @@
 | [OAGDBContextBase.cs](OAGBudget.DAL/Models/OAGDBContextBase.cs) | DbContext (mapping) | — |
 
 ### 2.5 Models / DTOs (`OAGBudget.Models`)
+
 | ไฟล์ | บทบาท | ต้องแก้? |
 |---|---|---|
 | [BudgetReservedCentralFormModel.cs](OAGBudget.Models/Data/BudgetReservedCentralFormModel.cs) | payload ตอน save | อาจเพิ่ม field (round, เลขที่เงินกันเพิ่ม) |
@@ -127,6 +132,7 @@
 ## 3. Oracle Objects ที่เกี่ยวข้อง
 
 ### 3.1 Tables (เขียน)
+
 | Table | บทบาทในหน้านี้ |
 |---|---|
 | `OAGWBG_BUDGETRESERVED` | header เอกสารกันเหลื่อม/โอนเข้าบัญชีเงินกัน (`Statusid`, `Budgetyear`, `Roundinterface`, `Transferno`) |
@@ -137,6 +143,7 @@
 | `OAGWBG_RECEIVE_BATCH_NO` | running batch ของ interface (BG/ENC CARRY_FORWARD) |
 
 ### 3.2 Views (อ่าน)
+
 | View | บทบาท |
 |---|---|
 | `OAGWBG_V_BUDGETOVERLAPYEAR_PR` | รายการ PR (ไม่มีหนี้) คงเหลือ — filter `BudgetSource='400'` + `Caryfwd_no = Transferno` |
@@ -146,12 +153,14 @@
 | `OAGWBG_V_BUDGETRECEIVE` | งบรับจัดสรร (allocate) |
 
 ### 3.3 Functions / Stored
+
 | Object | ใช้ที่ |
 |---|---|
 | `OAGWBG.OAGWBG_FN_GETBUDGETYEAR(:date)` | `GetBudgetYear()` — คืนปีงบฯ ตามวันที่ (**แกนกลางของ requirement ข้อ 2/3**) |
 | `OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY(...)` | งบจัดสรร (ใช้ใน flow อื่นที่เกี่ยว) |
 
 ### 3.4 Temp / Interface objects (สำหรับ "ยืนยัน/ยกเลิก")
+
 | Object | บทบาท |
 |---|---|
 | `APPS.OAG_GL_FUNDS_AVAILABLE_PKG_BYPASS` | **temp/bypass** คำนวณ funds available — pattern DELETE→INSERT→SELECT ต่อ `P_CODE_COMBINATION_ID` (ใน `GetBudgetOverlapYearCentralList`) |
@@ -161,6 +170,7 @@
 > **หมายเหตุ:** การ "ยืนยัน/ยกเลิก" รายการ ปัจจุบัน **ไม่มี temp table แยก** — ใช้ field สถานะใน `OAGWBG_BUDGETRESERVEDITEM` แทน: `Statusid` 90102 (ขยาย), 90109 (ยกเลิก) → 90110 (ยกเลิก-ยืนยัน) + flag `Approve` (ดู `ConfirmBudgetReserved` / `UpdateBudgetOverlapStatus`)
 
 ### 3.5 รหัสสถานะ (Status) ที่พบ
+
 | Statusid | ความหมาย (จากโค้ด) |
 |---|---|
 | 90101 | ร่าง/สร้างใหม่ |
@@ -476,6 +486,7 @@ bool showActionTabs = Model.Statusid == 20202 || Model.Statusid == 90102 || Mode
 - 🔎 **พบช่องว่าง model:** view มี `CONTRACT_CARRY_FORWARD_PO` แต่ C# model [OagwbgVBudgetreserveditem.cs](OAGBudget.DAL/Models/OagwbgVBudgetreserveditem.cs) **ยังไม่ map** field นี้ (ไม่ blocker แต่ควร map ถ้าจะใช้)
 
 ### ก.3 ข้อมูลจริง `OAGWBG_BUDGETRESERVED` REGION='C' — ตรวจ Roundinterface
+
 | ID | TRANSFERNO | YEAR | STATUS | ROUNDIF |
 |---|---|---|---|---|
 | 65 | 68030015 | 2570 | 20202 | 2 |
