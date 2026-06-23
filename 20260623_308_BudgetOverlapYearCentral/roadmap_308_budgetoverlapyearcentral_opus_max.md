@@ -812,13 +812,32 @@ bool canEditExpand = Model.IsExpandPeriod && !isLocked;
 
 ---
 
-### 🔲 13.8 งานที่เหลือ
+### ✅ 13.8 Unit Tests — `OAGBudget.Tests` (2026-06-23)
+
+> `dotnet test` — **9/9 Passed** · ไม่ต้องต่อ DB (pure function)
+
+| Test | วันที่ทดสอบ | คาด | ผล |
+|---|---|---|---|
+| `GetPeriod_ReturnsCorrectPeriodType` | 1 เม.ย. | RESERVE | ✅ |
+| `GetPeriod_ReturnsCorrectPeriodType` | 30 ก.ย. | RESERVE | ✅ |
+| `GetPeriod_ReturnsCorrectPeriodType` | 15 ก.ค. | RESERVE | ✅ |
+| `GetPeriod_ReturnsCorrectPeriodType` | 1 ต.ค. | EXPAND | ✅ |
+| `GetPeriod_ReturnsCorrectPeriodType` | 31 มี.ค. | EXPAND | ✅ |
+| `GetPeriod_ReturnsCorrectPeriodType` | 15 ม.ค. (ข้ามปี) | EXPAND | ✅ |
+| `GetPeriod_ReservePeriod_HasCorrectDateRange` | StartDate=1เม.ย. EndDate=30ก.ย.23:59:59 | — | ✅ |
+| `GetPeriod_ExpandPeriod_OctToMar_HasCorrectDateRange` | StartDate=1ต.ค. EndDate=31มี.ค.ปีถัดไป | — | ✅ |
+| `GetPeriod_ExpandPeriod_JanToMar_StartDateIsOctPreviousYear` | ม.ค.2027 → StartDate=1ต.ค.2026 | — | ✅ |
+
+```
+Total tests: 9  |  Passed: 9  |  Failed: 0  |  Time: 5.71s
+```
+
+---
+
+### 🔲 13.9 งานที่เหลือ
 
 | # | งาน | ระดับ | ใคร |
 |---|---|---|---|
-| 1 | **Unit tests** `BudgetPeriodHelper.GetPeriod()` — 6 boundary cases | เล็ก | Dev |
-| 2 | **Oracle function** `OAGWBG_FN_GET_RESERVE_PERIOD` | optional | DBA |
-| 3 | **List screen filters** (รอบ/ปี) บนหน้า BudgetOverlapYearCentralList | optional | Dev |
-
-> Unit test ไม่ต้องต่อ DB — `BudgetPeriodHelper.GetPeriod()` เป็น pure function รับ `DateTime` คืน `BudgetPeriod`
+| 1 | **Oracle function** `OAGWBG_FN_GET_RESERVE_PERIOD` | optional | DBA |
+| 2 | **List screen filters** (รอบ/ปี) บนหน้า BudgetOverlapYearCentralList | optional | Dev |
 
