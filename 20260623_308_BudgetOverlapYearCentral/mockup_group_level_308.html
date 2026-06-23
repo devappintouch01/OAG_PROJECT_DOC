@@ -91,7 +91,7 @@
         </thead>
         <tbody>
           <!-- history round 1 -->
-          <tr class="grp"><td colspan="10"><span class="chev">▾</span> ขยายเวลา ครั้งที่ 1 — ปีงบประมาณ 2569 <span class="pill hist">ประวัติ (read-only)</span></td></tr>
+          <tr class="grp"><td colspan="10"><span class="chev">▾</span> กันเหลื่อม - ปีงบประมาณ 2569 <span class="pill hist">ประวัติ (read-only)</span></td></tr>
           <tr class="hist">
             <td><input type="checkbox" checked disabled></td><td>1</td><td>16900360</td>
             <td class="l">ค่าจัดซื้อวัสดุสำนักงาน</td><td class="r">1,000.00</td><td>-</td>
@@ -103,7 +103,7 @@
             <td class="r">2,000.00</td><td class="r"><span class="ro">2,000.00</span></td><td><span class="ro">—</span></td><td class="status-ok">อนุมัติ</td>
           </tr>
           <!-- current round 2 -->
-          <tr class="grp current"><td colspan="10"><span class="chev">▾</span> ขยายเวลา ครั้งที่ 2 — ปีงบประมาณ 2570 <span class="pill cur">รอบปัจจุบัน — ดึงจาก View PR (ยอดคงเหลือสด)</span></td></tr>
+          <tr class="grp current"><td colspan="10"><span class="chev">▾</span> ขยายเวลา - ปีงบประมาณ 2570 <span class="pill cur">รอบปัจจุบัน — ดึงจาก View PR (ยอดคงเหลือสด)</span></td></tr>
           <tr>
             <td><input type="checkbox" class="chk"></td><td>1</td><td>16900360</td>
             <td class="l">ค่าจัดซื้อวัสดุสำนักงาน</td><td class="r">1,000.00</td><td>-</td>
@@ -119,7 +119,7 @@
           <tr><td colspan="7">สรุปยอดเงินคงเหลือรวมจากรายการที่เลือก :</td><td colspan="3"><input class="cell" value="0.00" readonly></td></tr>
         </tfoot>
       </table>
-      <div class="note-ex">📌 ฝั่ง PR (ไม่มีหนี้): หัวกลุ่ม = <code>ขยายเวลา ครั้งที่ {n} — ปีงบประมาณ {OVERLAPYEAR}</code> · ใช้แค่ "ครั้งที่ n" (ไม่มีเลข <code>.n</code> แบบ PO)</div>
+      <div class="note-ex">📌 ฝั่ง PR (ไม่มีหนี้): หัวกลุ่ม = <code>&lt;ประเภทกิจกรรม&gt; - ปีงบประมาณ {ปี}</code> (เช่น <code>กันเหลื่อม</code> / <code>ขยายเวลา</code>) · ใช้เลขที่เงินกันเดิม <b>ไม่มี <code>.รอบ</code></b> (มติ 2/3)</div>
     </div>
 
     <!-- ============== PO ============== -->
@@ -164,12 +164,11 @@
   </div>
 
   <div class="card">
-    <h2>จุดที่ขอ BA ตัดสิน (Q2 / ข้อ 3)</h2>
-    <div class="ba">❶ <b>ข้อความหัวกลุ่ม (label)</b> — เอาตามตัวอย่างนี้ไหม? เทียบกับตัวอย่างใน requirement เดิมที่เขียนว่า
-      <code>ขยายเวลา-ปีงบประมาณ 2569</code>, <code>กันเงินเหลื่อมปี</code>, <code>ปีงบประมาณ 2570</code></div>
-    <div class="ba">❷ <b>จำนวนชั้น</b> — เสนอ <b>2 ชั้น</b> (หัวกลุ่ม + รายการ) · ถ้าต้องการ 3 ชั้น (เช่น ปี &gt; ครั้ง &gt; รายการ) ต้องระบุ</div>
-    <div class="ba">❸ <b>PR ต้องมีเลข <code>.n</code> เหมือน PO ไหม</b> หรือใช้ "ครั้งที่ n" พอ (ตัวอย่างนี้ PR ใช้ "ครั้งที่ n")</div>
-    <div class="ba">❹ <b>รอบปัจจุบันให้ "พับเก็บ (collapse)" ประวัติได้ไหม</b> — ตัวอย่างนี้กางทุกกลุ่ม</div>
+    <h2>มติที่ได้รับ (2026-06-23) ✅</h2>
+    <div class="ba">✅ <b>ข้อความหัวกลุ่ม (label):</b> PR = <code>&lt;ประเภท&gt; - ปีงบประมาณ {ปี}</code> (กันเหลื่อม/ขยายเวลา) · PO = <code>&lt;เลขที่เงินกัน&gt;.รอบ</code></div>
+    <div class="ba">✅ <b>จำนวนชั้น:</b> 2 ชั้น (หัวกลุ่ม + รายการ)</div>
+    <div class="ba">✅ <b>PR ไม่มีเลข <code>.รอบ</code></b> — ใช้เลขที่เงินกันเดิม (ไม่แตกย่อย); PO เก็บแยก <code>TRANSFERNO</code> (ต้นฉบับ) + <code>EXPAND_RESERVENO</code> (แตกย่อย)</div>
+    <div class="ba">⏳ <b>การพับกลุ่ม (collapse):</b> ยังไม่ระบุ — ตัวอย่างนี้กางทุกกลุ่ม (nice-to-have)</div>
     <div class="foot">Mockup static — ค่าตัวอย่างอิงข้อมูลจริง PREPROD (booknumber 169xxxxx/269xxxxx, เลขที่เงินกัน 68030009) · ยังไม่ผูกข้อมูล/ไม่ใช่โค้ดจริง</div>
   </div>
 
