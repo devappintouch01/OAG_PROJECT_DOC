@@ -868,3 +868,86 @@ Total tests: 9  |  Passed: 9  |  Failed: 0  |  Time: 5.71s
 |---|---|
 | **(ก) เพิ่มคอลัมน์ "รอบ"** | แสดง เช่น "ขยายเวลาครั้งที่ 1" ต่อท้ายแต่ละแถว |
 | **(ข) ไม่ต้องเพิ่ม** | ดูรายละเอียดรอบได้ในหน้า detail อยู่แล้ว |
+
+> ถ้า BA ตอบ (ข) ทั้ง 2 ข้อ → ข้าม list filters ได้เลย ไม่มีงานเพิ่ม
+
+---
+
+## 15. ข้อเสนอ — BypassPeriodGuard สำหรับ UAT/QA
+
+> **วันที่:** 2026-06-24 · **เสนอโดย:** Dev · **รอมติ:** หัวหน้าทีม
+
+### ปัญหา
+
+Feature นี้มี period guard เข้มงวด — ยืนยันรายการ (Confirm) ได้เฉพาะในช่วงเวลาที่กำหนด:
+
+| รอบ | ช่วงที่ Confirm ได้ |
+|---|---|
+| กันเงิน | 1 เม.ย. – 30 ก.ย. |
+| ขยายเวลา | 1 ต.ค. – 31 มี.ค. |
+
+ทำให้ **Tester ไม่สามารถทดสอบ flow เต็มรูปแบบ (กันเงิน → ขยายเวลา → ขยายเวลา) ในวันเดียวได้** เพราะต้องรอวันที่เปลี่ยนช่วงจริง ซึ่งใช้เวลาข้ามเดือน
+
+### ข้อเสนอ
+
+เพิ่ม feature flag `BypassPeriodGuard` บน **PREPROD เท่านั้น** เพื่อเปิด/ปิด period gate สำหรับการทดสอบ
+
+**สิ่งที่ bypass:**
+- เงื่อนไข "ห้าม confirm นอกช่วงเวลา" ใน `ConfirmBudgetReserved`
+
+**สิ่งที่ไม่ bypass (ทำงานตามปกติทุกกรณี):**
+- ตรรกะ Roundinterface คี่/คู่ → ส่ง / ไม่ส่ง GL interface
+- Budgetyear+1 เฉพาะรอบ RESERVE (คี่)
+- Reservedno = `{Transferno}.{n}`
+- ประวัติรอบเก่า read-only
+
+### การ implement (2 จุด)
+
+**① `appsettings.json` (PREPROD)**
+```json
+"FeatureFlags": {
+  "BypassPeriodGuard": true
+}
+```
+
+**② `BudgetService.cs` — `ConfirmBudgetReserved`**
+```csharp
+var bypass = _configuration.GetValue<bool>("FeatureFlags:BypassPeriodGuard");
+if (!bypass)
+{
+    // period guard เดิม
+    var expectReserve = budget.Roundinterface == null || (budget.Roundinterface % 2) != 0;
+    var actualReserve = period.PeriodType == BudgetPeriodType.RESERVE;
+    if (expectReserve != actualReserve)
+        return new ApiResultsModel { Success = false, Message = "...", Id = model.Id };
+}
+```
+
+### Flow ทดสอบเมื่อเปิด bypass (ทำได้ในวันเดียว)
+
+| ขั้น | Roundinterface | ผลที่คาด |
+|---|---|---|
+| สร้าง + กันเงิน + **Confirm** | null → 1 (คี่) | ส่ง GL interface · Budgetyear+1 |
+| เปิดรายการ | 1 | tab กันเงิน lock icon · header disabled |
+| ขยายเวลา ครั้งที่ 1 + **Confirm** | 1 → 2 (คู่) | ไม่ส่ง interface · Reservedno = `xxx.1` |
+| เปิดรายการ | 2 | tab ขยายเวลา: กลุ่มประวัติ read-only + กลุ่มปัจจุบัน |
+| ขยายเวลา ครั้งที่ 2 + **Confirm** | 2 → 3 → 4 (คู่) | Reservedno = `xxx.2` · ประวัติ 2 กลุ่ม |
+
+> Roundinterface 3 (คี่) ถูก toggle เป็น 4 (คู่) อัตโนมัติหลัง confirm รอบขยายเวลาครั้งที่ 2
+
+### Checklist ก่อน Deploy PROD
+
+- [ ] ตั้ง `BypassPeriodGuard: false` ใน `appsettings.json` PROD (หรือใช้ `appsettings.Production.json` ที่ไม่มี key นี้ → default = false)
+- [ ] ตรวจสอบว่าไม่มี `BypassPeriodGuard: true` หลุดไป PROD
+
+### ความเสี่ยง
+
+| ความเสี่ยง | ระดับ | มิติการลด |
+|---|---|---|
+| หลุดไปเปิดบน PROD | 🔴 สูง | ใช้ `appsettings.Production.json` แยก / ตรวจ pre-deploy checklist |
+| Tester confirm ผิด sequence | 🟡 กลาง | แนบ flow ทดสอบนี้ให้ Tester ยึดตาม |
+
+### มติที่ต้องการ
+
+- [ ] **(ก) อนุมัติ** — Dev implement + ทดสอบบน PREPROD
+- [ ] **(ข) ไม่อนุมัติ** — Tester รอช่วงเวลาจริง (UAT กันเงิน เม.ย.–ก.ย. / UAT ขยายเวลา ต.ค.–มี.ค.)
