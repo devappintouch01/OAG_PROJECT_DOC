@@ -147,14 +147,14 @@
 
 ### ตารางในรูป (9 ตาราง — จาก 13 ที่วางแผน)
 
-| ตาราง | บทบาท | หมายเหตุ |
-|---|---|---|
-| `OAGWBG_SYSTEMUSER` | ผู้ใช้งาน | ✅ มีใน DB |
-| `OAGWBG_SYSTEMROLE` | Role/กลุ่มสิทธิ์ | ✅ มีใน DB |
-| `OAGWBG_SYSTEMUSERROLEASSIGN` | มอบหมาย Role → User | ✅ มีใน DB |
-| `OAGWBG_SYSTEMMENU` | เมนูระบบ | ✅ มีใน DB |
-| `OAGWBG_SYSTEMMENUGROUP` | กลุ่มเมนู | ✅ มีใน DB |
-| `OAGWBG_SYSTEMMENUROLEASSIGN` | มอบหมาย Menu → Role | ✅ มีใน DB |
-| `OAGWBG_WORKFLOWJOBLOG` | Log workflow | ✅ มีใน DB |
-| `OAGWBG_CANCELREASONLOG` | Log เหตุผลยกเลิก | ✅ มีใน DB |
-| `OAGWBG_LOG_INTERFACE` | Log ส่ง interface ไป Oracle EBS | ✅ มีใน DB |
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_SYSTEMUSER` | ผู้ใช้งาน  |
+| `OAGWBG_SYSTEMROLE` | Role/กลุ่มสิทธิ์ |
+| `OAGWBG_SYSTEMUSERROLEASSIGN` Role → User |
+| `OAGWBG_SYSTEMMENU` | เมนูระบบ |
+| `OAGWBG_SYSTEMMENUGROUP` | กลุ่มเมนู |
+| `OAGWBG_SYSTEMMENUROLEASSIGN` | มอบหมาย Menu → Role |
+| `OAGWBG_WORKFLOWJOBLOG` | Log workflow |
+| `OAGWBG_CANCELREASONLOG` | Log เหตุผลยกเลิก |
+| `OAGWBG_LOG_INTERFACE` | Log ส่ง interface ไป Oracle EBS |
