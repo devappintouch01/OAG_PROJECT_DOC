@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M8a_สินทรัพย์-จัดซื้อ-วัสดุ.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_MASTERASSETTYPE" fq-name="OAGWBG.OAGWBG_MASTERASSETTYPE" order="0" x="20" y="540">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_MASTERASSETTYPESUB" fq-name="OAGWBG.OAGWBG_MASTERASSETTYPESUB" order="1" x="320" y="540">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_MASTERASSETACQUISITIONTYPE" fq-name="OAGWBG.OAGWBG_MASTERASSETACQUISITIONTYPE" order="2" x="20" y="20">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_MASTERASSETBUDGETTYPE" fq-name="OAGWBG.OAGWBG_MASTERASSETBUDGETTYPE" order="3" x="320" y="20">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_MASTERASSETCLASS" fq-name="OAGWBG.OAGWBG_MASTERASSETCLASS" order="4" border-width="3" x="600" y="540">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="6" name="OAGWBG_MASTERWAREHOUSE" fq-name="OAGWBG.OAGWBG_MASTERWAREHOUSE" order="5" x="820" y="20">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="7" name="OAGWBG_MASTERLANDTYPE" fq-name="OAGWBG.OAGWBG_MASTERLANDTYPE" order="6" x="600" y="20">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="8" name="OAGWBG_MASTERPROCUREMENTMETHOD" fq-name="OAGWBG.OAGWBG_MASTERPROCUREMENTMETHOD" order="7" x="320" y="260">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="9" name="OAGWBG_MASTERPROCUREMENTMETHODSTEP" fq-name="OAGWBG.OAGWBG_MASTERPROCUREMENTMETHODSTEP" order="8" x="1060" y="20">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="10" name="OAGWBG_MASTERMATERIAL" fq-name="OAGWBG.OAGWBG_MASTERMATERIAL" order="9" x="600" y="260">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="11" name="OAGWBG_MASTERMATERIALGROUP" fq-name="OAGWBG.OAGWBG_MASTERMATERIALGROUP" order="10" x="20" y="260">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="12" name="OAGWBG_MASTERMATERIALGPSC" fq-name="OAGWBG.OAGWBG_MASTERMATERIALGPSC" order="11" x="820" y="260">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="13" name="OAGWBG_MASTERSTANDARDPRICE" fq-name="OAGWBG.OAGWBG_MASTERSTANDARDPRICE" order="12" x="1060" y="260">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations/>
+</diagram>

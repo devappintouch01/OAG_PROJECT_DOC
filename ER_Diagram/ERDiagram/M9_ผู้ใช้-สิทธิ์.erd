@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M9_ผู้ใช้-สิทธิ์.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_SYSTEMUSER" fq-name="OAGWBG.OAGWBG_SYSTEMUSER" order="0" x="22" y="11">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_SYSTEMROLE" fq-name="OAGWBG.OAGWBG_SYSTEMROLE" order="1" x="24" y="410">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_SYSTEMUSERROLEASSIGN" fq-name="OAGWBG.OAGWBG_SYSTEMUSERROLEASSIGN" order="2" x="233" y="17">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_SYSTEMMENU" fq-name="OAGWBG.OAGWBG_SYSTEMMENU" order="3" x="585" y="10">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_SYSTEMMENUGROUP" fq-name="OAGWBG.OAGWBG_SYSTEMMENUGROUP" order="4" x="531" y="484">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="6" name="OAGWBG_SYSTEMMENUROLEASSIGN" fq-name="OAGWBG.OAGWBG_SYSTEMMENUROLEASSIGN" order="5" x="24" y="672">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="7" name="OAGWBG_WORKFLOWJOBLOG" fq-name="OAGWBG.OAGWBG_WORKFLOWJOBLOG" order="6" x="493" y="701">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="8" name="OAGWBG_CANCELREASONLOG" fq-name="OAGWBG.OAGWBG_CANCELREASONLOG" order="7" x="269" y="674">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="9" name="OAGWBG_LOG_INTERFACE" fq-name="OAGWBG.OAGWBG_LOG_INTERFACE" order="8" x="787" y="13">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations>
+		<relation name="vfk_OAGWBG_SYSTEMUSERROLEASSIGN_OAGWBG_SYSTEMUSER" type="vfk" pk-ref="1" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_SYSTEMUSERROLEASSIGN_OAGWBG_SYSTEMROLE" type="vfk" pk-ref="2" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_SYSTEMUSERROLEASSIGN_OAGWBG_SYSTEMMENU" type="vfk" pk-ref="4" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_SYSTEMMENU_OAGWBG_SYSTEMMENUGROUP" type="vfk" pk-ref="5" fk-ref="4"/>
+		<relation name="vfk_OAGWBG_SYSTEMUSERROLEASSIGN_OAGWBG_SYSTEMMENUGROUP" type="vfk" pk-ref="5" fk-ref="3"/>
+	</relations>
+</diagram>

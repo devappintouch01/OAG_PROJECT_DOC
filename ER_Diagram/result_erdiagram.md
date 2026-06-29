@@ -18,7 +18,9 @@
 | ✅ | M6 | กันเงิน/คืนงบ | 6 | 3 เส้น |
 | ⬜ | M7a | สินทรัพย์ (ทะเบียน+ยืม+โอน) | 10 | 9 เส้น |
 | ⬜ | M7b | สินทรัพย์ (ขอซื้อ+คืน+ตัด+ซ่อม) | 11 | 9 เส้น |
-| ⬜ | M8 | Master data | ~45 | 2 เส้น |
+| ✅ | M8a | Master: สินทรัพย์-จัดซื้อ-วัสดุ | ~15 | - |
+| ✅ | M8b | Master: งบ-การเงิน-องค์กร-บุคลากร | ~15 | - |
+| ✅ | M8c | Master: ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ | ~15 | - |
 | ✅ | M9 | ผู้ใช้/สิทธิ์ | 9 | 6 เส้น |
 
 ---
@@ -285,43 +287,30 @@
 
 ---
 
-## M8 — Master data
+## M8a — Master: สินทรัพย์-จัดซื้อ-วัสดุ
 
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M8a_สินทรัพย์-จัดซื้อ-วัสดุ.png`](ERDiagram/M8a_สินทรัพย์-จัดซื้อ-วัสดุ.png) | [`ERDiagram/M8a_สินทรัพย์-จัดซื้อ-วัสดุ.erd`](ERDiagram/M8a_สินทรัพย์-จัดซื้อ-วัสดุ.erd)
 
-### ตารางที่ต้องเลือกใน DBeaver (~45 ตาราง — เลือกเฉพาะที่มี FK ระหว่างกัน)
+<img src="ERDiagram/M8a_สินทรัพย์-จัดซื้อ-วัสดุ.png" style="border: 1px solid black;" width="100%">
 
-| ตาราง | บทบาท |
-|---|---|
-| `OAGWBG_MASTERASSETCLASS` | หมวดสินทรัพย์ |
-| `OAGWBG_MASTERASSETTYPE` | ประเภทสินทรัพย์ |
-| `OAGWBG_MASTERASSETTYPESUB` | ประเภทย่อยสินทรัพย์ |
-| `OAGWBG_MASTERBUDGETEXPENSETYPE` | ประเภทรายจ่าย |
-| `OAGWBG_MASTERBUDGETTYPE` | ประเภทงบประมาณ |
-| `OAGWBG_MASTERBUDGETFORMTYPE` | ประเภทแบบฟอร์มงบ |
-| `OAGWBG_MASTERBANK` | ธนาคาร |
-| `OAGWBG_MASTERCOSTCENTER` | ศูนย์ต้นทุน |
-| `OAGWBG_MASTERORGANIZATION` | หน่วยงาน |
-| `OAGWBG_MASTERUNIT` | หน่วยนับ |
-| `OAGWBG_MASTERSTATUS` | สถานะ (ใช้ร่วมกันหลายโมดูล) |
-| `OAGWBG_MASTERFUND` | แหล่งเงิน |
-| `OAGWBG_MASTERMATERIAL` | วัสดุ |
-| `OAGWBG_MASTERMATERIALGROUP` | กลุ่มวัสดุ |
-| `OAGWBG_MASTERPROCUREMENTMETHOD` | วิธีจัดซื้อ |
-| `OAGWBG_MASTERPROCUREMENTMETHODSTEP` | ขั้นตอนวิธีจัดซื้อ |
-| `OAGWBG_MASTERWAREHOUSE` | คลังพัสดุ |
-| `OAGWBG_MASTERSTANDARDPRICE` | ราคามาตรฐาน |
-| `OAGWBG_MASTERAMPHUR` / `MASTERPROVINCE` / `MASTERTAMBON` | ที่อยู่ |
-| ฯลฯ (ตาราง MASTER อื่นๆ อีก ~25 ตาราง) | lookup ต่างๆ |
+---
 
-### Virtual FK (ที่มีความสัมพันธ์ชัดเจน)
+## M8b — Master: งบ-การเงิน-องค์กร-บุคลากร
 
-| # | สถานะ | Child Table | Column | Parent Table | Ref Col |
-|---|---|---|---|---|---|
-| 1 | ⬜ | MASTERASSETTYPESUB | `ASSETTYPEID` | MASTERASSETTYPE | `ID` |
-| 2 | ⬜ | MASTERPROCUREMENTMETHODSTEP | `PROCUREMENTMETHODID` | MASTERPROCUREMENTMETHOD | `ID` |
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M8b_งบ-การเงิน-องค์กร-บุคลากร.png`](ERDiagram/M8b_งบ-การเงิน-องค์กร-บุคลากร.png) | [`ERDiagram/M8b_งบ-การเงิน-องค์กร-บุคลากร.erd`](ERDiagram/M8b_งบ-การเงิน-องค์กร-บุคลากร.erd)
 
-> Master ส่วนใหญ่เป็น lookup อิสระ — FK น้อยมาก พิจารณาทำเป็นรูปรายชื่อตาราง (index) แทน diagram เส้นก็ได้
+<img src="ERDiagram/M8b_งบ-การเงิน-องค์กร-บุคลากร.png" style="border: 1px solid black;" width="100%">
+
+---
+
+## M8c — Master: ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ
+
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M8c_ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ.png`](ERDiagram/M8c_ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ.png) | [`ERDiagram/M8c_ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ.erd`](ERDiagram/M8c_ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ.erd)
+
+<img src="ERDiagram/M8c_ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ.png" style="border: 1px solid black;" width="100%">
 
 ---
 
