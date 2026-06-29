@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M4_รับงบ-รอบงบ.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_BUDGETRECEIVE" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVE" order="0" x="24" y="20">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_BUDGETRECEIVEPERIOD" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVEPERIOD" order="1" x="398" y="408">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_BUDGETRECEIVEPERIODALLOCATION" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVEPERIODALLOCATION" order="2" x="27" y="725">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_BUDGETRECEIVEPERIODCATEGORY" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVEPERIODCATEGORY" order="3" x="716" y="385">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_BUDGETRECEIVEPERIODREQUEST" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVEPERIODREQUEST" order="4" x="391" y="813">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVEPERIODALLOCATION_OAGWBG_BUDGETRECEIVEPERIOD" type="vfk" pk-ref="2" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVEPERIODCATEGORY_OAGWBG_BUDGETRECEIVEPERIOD" type="vfk" pk-ref="2" fk-ref="4"/>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVE_OAGWBG_BUDGETRECEIVEPERIOD" type="vfk" pk-ref="2" fk-ref="1"/>
+	</relations>
+</diagram>

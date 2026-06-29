@@ -13,7 +13,7 @@
 | M1 | ✅ | โอน/รับโอนงบ | 5 | 6 เส้น |
 | M2 | ✅ | จัดสรร/โอนจัดสรร | 6 | 4 เส้น |
 | M3 | ✅ | คำของบประมาณ | 6 | 5 เส้น |
-| M4 | ⬜ | รับงบ/รอบงบ | 5 | 3 เส้น |
+| M4 | ✅ | รับงบ/รอบงบ | 5 | 3 เส้น |
 | M5 | ⬜ | แผนเบิกจ่าย | 8 | 7 เส้น |
 | M6 | ⬜ | กันเงิน/คืนงบ | 6 | 5 เส้น |
 | M7 | ⬜ | สินทรัพย์ | 20 | 18 เส้น |
@@ -120,9 +120,12 @@
 
 ## M4 — รับงบ/รอบงบ (Receive Period)
 
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M4_รับงบ-รอบงบ.png`](ERDiagram/M4_รับงบ-รอบงบ.png) | [`ERDiagram/M4_รับงบ-รอบงบ.erd`](ERDiagram/M4_รับงบ-รอบงบ.erd)
 
-### ตารางที่ต้องเลือกใน DBeaver (5 ตาราง)
+<img src="ERDiagram/M4_รับงบ-รอบงบ.png" style="border: 1px solid black;" width="100%">
+
+### ตารางในรูป (5 ตาราง)
 
 | ตาราง | บทบาท |
 |---|---|
@@ -136,11 +139,11 @@
 
 | # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
 |---|---|---|---|---|---|
-| 1 | ⬜ | BUDGETRECEIVEPERIODALLOCATION | `BUDGETRECEIVEPERIODID` | BUDGETRECEIVEPERIOD | `ID` |
-| 2 | ⬜ | BUDGETRECEIVEPERIODCATEGORY | `BUDGETRECEIVEPERIODID` | BUDGETRECEIVEPERIOD | `ID` |
-| 3 | ⬜ | BUDGETRECEIVEPERIOD | `BUDGETGOVERNMENTID` | BUDGETGOVERNMENT (M3) | `ID` |
+| 1 | ✅ | BUDGETRECEIVEPERIODALLOCATION | `BUDGETRECEIVEPERIODID` | BUDGETRECEIVEPERIOD | `ID` |
+| 2 | ✅ | BUDGETRECEIVEPERIODCATEGORY | `BUDGETRECEIVEPERIODID` | BUDGETRECEIVEPERIOD | `ID` |
+| 3 | ⏭️ | BUDGETRECEIVEPERIOD | `BUDGETGOVERNMENTID` | BUDGETGOVERNMENT (M3) | `ID` |
 
-> เส้นที่ 3 ข้ามโมดูล M4→M3 — ใส่หรือไม่ใส่ตามดุลพินิจ
+> เส้นที่ 3 ข้ามโมดูล M4→M3 — ข้าม / `BUDGETRECEIVE` และ `BUDGETRECEIVEPERIODREQUEST` แสดงเป็นกล่องลอย
 
 ---
 
