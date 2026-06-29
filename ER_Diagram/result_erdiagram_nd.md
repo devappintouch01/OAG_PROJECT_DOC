@@ -151,7 +151,7 @@
 |---|---|
 | `OAGWBG_SYSTEMUSER` | ผู้ใช้งาน  |
 | `OAGWBG_SYSTEMROLE` | Role/กลุ่มสิทธิ์ |
-| `OAGWBG_SYSTEMUSERROLEASSIGN` Role → User |
+| `OAGWBG_SYSTEMUSERROLEASSIGN` | มอบหมาย Role → User |
 | `OAGWBG_SYSTEMMENU` | เมนูระบบ |
 | `OAGWBG_SYSTEMMENUGROUP` | กลุ่มเมนู |
 | `OAGWBG_SYSTEMMENUROLEASSIGN` | มอบหมาย Menu → Role |
