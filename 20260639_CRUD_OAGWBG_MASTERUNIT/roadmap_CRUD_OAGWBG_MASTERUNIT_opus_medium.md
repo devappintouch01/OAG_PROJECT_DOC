@@ -1,8 +1,9 @@
 # Roadmap: หน้าจัดการ Master หน่วยนับ (OAGWBG_MASTERUNIT)
 
-> โมเดล: Opus (วิเคราะห์) + Sonnet (ลงมือทำ) + Haiku (finalize) · วันที่: 2026-06-29
-> **สถานะ: ✅ DONE — Code + DB + Tested ✓**
-> **Verified: เมนู "หน่วยนับ" ขึ้นแล้ว, List/CRUD ทำงาน, 8 รายการแสดงจาก DB**
+> โมเดล: Opus (วิเคราะห์) + Sonnet (ลงมือทำ) + Haiku (finalize + enhancements) · วันที่: 2026-06-29
+> **สถานะ: ✅ COMPLETE — CRUD + Validations + Enhancements ✓**
+> **Verified: เมนู ขึ้น, List/CRUD ทำงาน, Duplicate name check active**
+> **Versions:** 0.3.104.0 → 0.3.105.0 (Changeset #19149) · Duplicate check (Changeset #19152)
 
 ---
 
@@ -24,7 +25,16 @@
 
 ---
 
-## สิ่งที่ทำใน Changeset #19148
+## Post-Launch Enhancements
+
+| Changeset | ปรับปรุง | บทบาท |
+|---|---|---|
+| #19149 | Version bump 0.3.105.0 | Synchronize version after MasterUnit feature |
+| #19152 | Duplicate name validation | Prevent duplicate `Namethai` entries on save (create & edit) |
+
+---
+
+## สิ่งที่ทำใน Changeset #19148-19152
 
 ### ไฟล์ที่แก้ไข
 
@@ -91,6 +101,22 @@ INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID=300, SYSTEMROLEID=41, SYSTEMMENUID=2
    ├─ พบการใช้งาน → {success:false, "ไม่สามารถลบรายการได้เนื่องจาก รายการนี้ถูกนำไปใช้แล้ว"}
    └─ ไม่พบ → _masterService.DeleteMasterUnit() ──HTTP──► [API] /api/Master/DeleteMasterUnit
 ```
+
+---
+
+## Validations & Features
+
+### Duplicate Name Check (Changeset #19152)
+- **ที่:** SaveMasterUnit (MasterController)
+- **Logic:**
+  - ก่อนบันทึก ตรวจสอบ `Namethai` ในระบบ
+  - ถ้า Create + มีชื่อซ้ำ → "ชื่อหน่วยนับนี้มีอยู่ในระบบแล้ว"
+  - ถ้า Edit + ชื่อซ้ำกับ record อื่น → error เดียวกัน
+  - ไม่บังคับ case-sensitive (OrdinalIgnoreCase)
+
+### In-Use Validation (Delete)
+- ตรวจ `OAGWBG_ASSET.UnitId` + `OAGWBG_BUDGETGOVERNMENTITEM.Quantityunitid`
+- ถ้าพบการใช้งาน → "ไม่สามารถลบรายการได้เนื่องจาก รายการนี้ถูกนำไปใช้แล้ว"
 
 ---
 
