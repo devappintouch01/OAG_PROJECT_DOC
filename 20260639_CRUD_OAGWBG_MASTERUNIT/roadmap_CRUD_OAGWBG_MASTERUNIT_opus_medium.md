@@ -1,7 +1,8 @@
 # Roadmap: หน้าจัดการ Master หน่วยนับ (OAGWBG_MASTERUNIT)
 
-> โมเดล: Opus (วิเคราะห์) + Sonnet (ลงมือทำ) · วันที่: 2026-06-29
-> **สถานะ: ✅ DONE — Changeset #19148 + DB insert สำเร็จ**
+> โมเดล: Opus (วิเคราะห์) + Sonnet (ลงมือทำ) + Haiku (finalize) · วันที่: 2026-06-29
+> **สถานะ: ✅ DONE — Code + DB + Tested ✓**
+> **Verified: เมนู "หน่วยนับ" ขึ้นแล้ว, List/CRUD ทำงาน, 8 รายการแสดงจาก DB**
 
 ---
 
@@ -18,8 +19,8 @@
 | **Frontend** MasterController (5 actions) | ✅ **เพิ่มแล้ว** | Changeset #19148 |
 | **Frontend** MasterService (6 CRUD methods) | ✅ **เพิ่มแล้ว** | Changeset #19148 |
 | **Frontend** Views (3 ไฟล์) | ✅ **สร้างแล้ว** | Changeset #19148 |
-| Menu `OAGWBG_SYSTEMMENU` (ID=225) | ✅ **insert แล้ว** | 2026-06-29 |
-| RoleAssign `OAGWBG_SYSTEMMENUROLEASSIGN` (ID=300) | ✅ **insert แล้ว** | Role ID=1 (ผู้ดูแลระบบ1) |
+| Menu `OAGWBG_SYSTEMMENU` (ID=225) | ✅ **insert แล้ว** | 2026-06-29 — ขึ้นเมนูแล้ว |
+| RoleAssign `OAGWBG_SYSTEMMENUROLEASSIGN` (ID=300) | ✅ **insert แล้ว** | Role ID=41 (level=30) — verified ขึ้น |
 
 ---
 
@@ -45,15 +46,18 @@
 ## DB ที่ insert ลง PREPROD
 
 ```sql
--- เมนู
+-- เมนู (insert สำเร็จ)
 INSERT INTO OAGWBG_SYSTEMMENU (ID=225, MENUNAME='หน่วยนับ', URL='/Master/MasterUnit',
   ACTIONNAME='MasterUnit', CONTROLLERNAME='Master', SEQUENCE=16, PARENTMENUID=69,
-  SYSTEMMENUGROUPID=2, SYSTEMNAMEID=2, ACTIVE='1', ISSHOWINSITEMENU='1')
+  SYSTEMMENUGROUPID=2, SYSTEMNAMEID=2, ACTIVE='1', ISSHOWINSITEMENU='1');
 
--- สิทธิ์
-INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID=300, SYSTEMROLEID=1, SYSTEMMENUID=225)
--- SYSTEMROLEID=1 = ผู้ดูแลระบบ1 (Rolelevel=200)
+-- สิทธิ์ (update: role ID เปลี่ยนเป็น 41)
+DELETE FROM OAGWBG_SYSTEMMENUROLEASSIGN WHERE SYSTEMMENUID = 225;
+INSERT INTO OAGWBG_SYSTEMMENUROLEASSIGN (ID=300, SYSTEMROLEID=41, SYSTEMMENUID=225);
+-- SYSTEMROLEID=41 = role level 30 (ไม่ใช่ admin)
 ```
+
+**Verified:** 2026-06-29 เมนู "หน่วยนับ" ขึ้นแล้ว List มี 8 รายการจาก DB
 
 ---
 
