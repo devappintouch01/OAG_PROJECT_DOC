@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M1.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_BUDGETADJUST" fq-name="OAGWBG.OAGWBG_BUDGETADJUST" order="0" x="660" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_BUDGETRECEIVE" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVE" order="1" x="320" y="220">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_BUDGETRECEIVEREFUND" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVEREFUND" order="2" x="40" y="780">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_BUDGETRECEIVEREFUND_COSTCENTER" fq-name="OAGWBG.OAGWBG_BUDGETRECEIVEREFUND_COSTCENTER" order="3" x="660" y="620">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_BUDGETTRANSFER" fq-name="OAGWBG.OAGWBG_BUDGETTRANSFER" order="4" x="1020" y="360">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVE_OAGWBG_BUDGETADJUST" type="vfk" pk-ref="1" fk-ref="2"/>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVEREFUND_OAGWBG_BUDGETRECEIVE" type="vfk" pk-ref="2" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_BUDGETADJUST_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="1"/>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVE_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="2"/>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVEREFUND_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="3">
+			<bend type="abs" x="326" y="979"/>
+			<bend type="abs" x="664" y="979"/>
+		</relation>
+		<relation name="vfk_OAGWBG_BUDGETRECEIVEREFUND_COSTCENTER_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="4"/>
+	</relations>
+</diagram>
