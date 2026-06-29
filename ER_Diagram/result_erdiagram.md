@@ -16,8 +16,7 @@
 | ✅ | M4 | รับงบ/รอบงบ | 5 | 3 เส้น |
 | ✅ | M5 | แผนเบิกจ่าย | 8 | 6 เส้น |
 | ✅ | M6 | กันเงิน/คืนงบ | 6 | 3 เส้น |
-| ⬜ | M7a | สินทรัพย์ (ทะเบียน+ยืม+โอน) | 10 | 9 เส้น |
-| ⬜ | M7b | สินทรัพย์ (ขอซื้อ+คืน+ตัด+ซ่อม) | 11 | 9 เส้น |
+| ⬜ | M7 | สินทรัพย์ (ยุบ M7a+M7b) | 4 (DB) / 20 code-only | 3 เส้น |
 | ✅ | M8a | Master: สินทรัพย์-จัดซื้อ-วัสดุ | ~15 | - |
 | ✅ | M8b | Master: งบ-การเงิน-องค์กร-บุคลากร | ~15 | - |
 | ✅ | M8c | Master: ที่อยู่-กลยุทธ์-ระบบ-อื่นๆ | ~15 | - |
@@ -214,76 +213,37 @@
 
 > เส้นที่ 5 ลากไม่ได้ — `BUDGETREFUND` ไม่มี Primary Key ใน DB ทำให้ DBeaver ไม่ยอม create virtual FK
 
-## M7a — สินทรัพย์ ทะเบียน+ยืม+โอน
+## M7 — สินทรัพย์ (ยุบ M7a + M7b)
 
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+**สถานะ:** ⬜ รอ PNG
+**ไฟล์:** [`ERDiagram/M7_สินทรัพย์-ทะเบียน-ยืม-โอน.erd`](ERDiagram/M7_สินทรัพย์-ทะเบียน-ยืม-โอน.erd)
 
-### ตารางใน DBeaver (10 ตาราง)
+> **หมายเหตุ:** M7b ยุบเข้า M7a — ตาราง ASSETREQUISITION/ASSETRETURN/ASSETWRITEOFF/ASSETMAINTENANCE ฯลฯ (20 ตาราง) ไม่มีใน PREPROD DB (code-only)
 
-| ตาราง | บทบาท |
-|---|---|
-| `OAGWBG_ASSET` | ทะเบียนสินทรัพย์หลัก |
-| `OAGWBG_ASSETIMAGE` | รูปภาพสินทรัพย์ |
-| `OAGWBG_ASSETTRACKIMAGE` | รูปติดตามสินทรัพย์ |
-| `OAGWBG_ASSETRELATION` | ความสัมพันธ์ระหว่างสินทรัพย์ |
-| `OAGWBG_ASSETCHANGE` | บันทึกการเปลี่ยนแปลง |
-| `OAGWBG_ASSETDEPRECIATION` | ค่าเสื่อมราคา |
-| `OAGWBG_ASSETBORROW` | การยืมสินทรัพย์ (header) |
-| `OAGWBG_ASSETBORROWITEM` | รายการยืม |
-| `OAGWBG_ASSETTRANSFER` | การโอนสินทรัพย์ (header) |
-| `OAGWBG_ASSETTRANSFERITEM` | รายการโอน |
+### ตารางใน DB (4 ตาราง)
 
-### Virtual FK (9 เส้น)
+| ตาราง | บทบาท | หมายเหตุ |
+|---|---|---|
+| `OAGWBG_ASSET` | ทะเบียนสินทรัพย์หลัก | ✅ มีใน DB |
+| `OAGWBG_ASSETIMAGE` | รูปภาพสินทรัพย์ | ✅ มีใน DB |
+| `OAGWBG_ASSETTRACKIMAGE` | รูปติดตามสินทรัพย์ | ✅ มีใน DB |
+| `OAGWBG_ASSETRELATION` | ความสัมพันธ์ระหว่างสินทรัพย์ | ✅ มีใน DB |
+
+### Code-only tables (ไม่มีใน PREPROD — ไม่แสดงใน diagram)
+
+ASSETCHANGE, ASSETDEPRECIATION, ASSETBORROW, ASSETBORROWITEM, ASSETTRANSFER, ASSETTRANSFERITEM, ASSETREQUISITION, ASSETREQUISITIONITEM, ASSETRETURN, ASSETRETURNITEM, ASSETWRITEOFF, ASSETWRITEOFFITEM, ASSETMAINTENANCE, ASSETMAINTENANCEFORM, ASSETMAINTENANCEFORMITEM, ASSETMAINTENANCEFORMITEMLIST
+
+### Virtual FK (3 เส้น)
 
 | # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
 |---|---|---|---|---|---|
 | 1 | ⬜ | ASSETIMAGE | `ASSETID` | ASSET | `ID` |
 | 2 | ⬜ | ASSETTRACKIMAGE | `ASSETID` | ASSET | `ID` |
 | 3 | ⬜ | ASSETRELATION | `ASSETID` | ASSET | `ID` |
-| 4 | ⬜ | ASSETCHANGE | `ASSETID` | ASSET | `ID` |
-| 5 | ⬜ | ASSETDEPRECIATION | `ASSETID` | ASSET | `ID` |
-| 6 | ⬜ | ASSETBORROWITEM | `ASSETBORROWID` | ASSETBORROW | `ID` |
-| 7 | ⬜ | ASSETBORROWITEM | `ASSETID` | ASSET | `ID` |
-| 8 | ⬜ | ASSETTRANSFERITEM | `ASSETTRANSFERID` | ASSETTRANSFER | `ID` |
-| 9 | ⬜ | ASSETTRANSFERITEM | `ASSETID` | ASSET | `ID` |
 
 ---
 
-## M7b — สินทรัพย์ ขอซื้อ+คืน+ตัดจำหน่าย+ซ่อมบำรุง
-
-**สถานะ:** ⬜ ยังไม่ได้ทำ
-
-### ตารางใน DBeaver (11 ตาราง)
-
-| ตาราง | บทบาท |
-|---|---|
-| `OAGWBG_ASSET` | ทะเบียนสินทรัพย์ (ref จาก M7a) |
-| `OAGWBG_ASSETREQUISITION` | ใบขอซื้อสินทรัพย์ (header) |
-| `OAGWBG_ASSETREQUISITIONITEM` | รายการขอซื้อ |
-| `OAGWBG_ASSETRETURN` | การส่งคืนสินทรัพย์ (header) |
-| `OAGWBG_ASSETRETURNITEM` | รายการส่งคืน |
-| `OAGWBG_ASSETWRITEOFF` | การตัดจำหน่าย (header) |
-| `OAGWBG_ASSETWRITEOFFITEM` | รายการตัดจำหน่าย |
-| `OAGWBG_ASSETMAINTENANCE` | การซ่อมบำรุง (header) |
-| `OAGWBG_ASSETMAINTENANCEFORM` | แบบฟอร์มซ่อมบำรุง |
-| `OAGWBG_ASSETMAINTENANCEFORMITEM` | รายการซ่อมบำรุง |
-| `OAGWBG_ASSETMAINTENANCEFORMITEMLIST` | รายละเอียดซ่อมบำรุง |
-
-### Virtual FK (9 เส้น)
-
-| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
-|---|---|---|---|---|---|
-| 1 | ⬜ | ASSETREQUISITIONITEM | `ASSETREQUISITIONID` | ASSETREQUISITION | `ID` |
-| 2 | ⬜ | ASSETREQUISITIONITEM | `ASSETID` | ASSET | `ID` |
-| 3 | ⬜ | ASSETRETURNITEM | `ASSETRETURNID` | ASSETRETURN | `ID` |
-| 4 | ⬜ | ASSETRETURNITEM | `ASSETID` | ASSET | `ID` |
-| 5 | ⬜ | ASSETWRITEOFFITEM | `ASSETWRITEOFFID` | ASSETWRITEOFF | `ID` |
-| 6 | ⬜ | ASSETWRITEOFFITEM | `ASSETID` | ASSET | `ID` |
-| 7 | ⬜ | ASSETMAINTENANCE | `ASSETID` | ASSET | `ID` |
-| 8 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETMAINTENANCEFORMID` | ASSETMAINTENANCEFORM | `ID` |
-| 9 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETID` | ASSET | `ID` |
-
-> `ASSETMAINTENANCEFORMITEMLIST` ลอย — ไม่มี FK ชัดเจนใน plan
+<!-- M7b ยุบเข้า M7 แล้ว — ดูรายละเอียดใน section M7 ด้านบน -->
 
 ---
 

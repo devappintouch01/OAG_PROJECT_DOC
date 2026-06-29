@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M8_Master-data.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_MASTERASSETCLASS" fq-name="OAGWBG.OAGWBG_MASTERASSETCLASS" order="0" x="2228" y="912">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_MASTERASSETTYPE" fq-name="OAGWBG.OAGWBG_MASTERASSETTYPE" order="1" x="2561" y="902">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_MASTERASSETTYPESUB" fq-name="OAGWBG.OAGWBG_MASTERASSETTYPESUB" order="2" x="1517" y="932">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_MASTERASSETACQUISITIONTYPE" fq-name="OAGWBG.OAGWBG_MASTERASSETACQUISITIONTYPE" order="3" x="344" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_MASTERASSETBUDGETTYPE" fq-name="OAGWBG.OAGWBG_MASTERASSETBUDGETTYPE" order="4" x="673" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="6" name="OAGWBG_MASTERBUDGETTYPE" fq-name="OAGWBG.OAGWBG_MASTERBUDGETTYPE" order="5" x="974" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="7" name="OAGWBG_MASTERBUDGETFORMTYPE" fq-name="OAGWBG.OAGWBG_MASTERBUDGETFORMTYPE" order="6" x="40" y="578">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="8" name="OAGWBG_MASTERBUDGETEXPENSETYPE" fq-name="OAGWBG.OAGWBG_MASTERBUDGETEXPENSETYPE" order="7" x="2819" y="892">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="9" name="OAGWBG_MASTEREXPENSETYPE" fq-name="OAGWBG.OAGWBG_MASTEREXPENSETYPE" order="8" x="1244" y="284">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="10" name="OAGWBG_MASTERFUND" fq-name="OAGWBG.OAGWBG_MASTERFUND" order="9" x="344" y="578">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="11" name="OAGWBG_MASTERPROCUREMENTMETHOD" fq-name="OAGWBG.OAGWBG_MASTERPROCUREMENTMETHOD" order="10" x="2228" y="568">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="12" name="OAGWBG_MASTERPROCUREMENTMETHODSTEP" fq-name="OAGWBG.OAGWBG_MASTERPROCUREMENTMETHODSTEP" order="11" x="1517" y="284">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="13" name="OAGWBG_MASTERMATERIAL" fq-name="OAGWBG.OAGWBG_MASTERMATERIAL" order="12" x="2561" y="568">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="14" name="OAGWBG_MASTERMATERIALGROUP" fq-name="OAGWBG.OAGWBG_MASTERMATERIALGROUP" order="13" x="673" y="578">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="15" name="OAGWBG_MASTERMATERIALGPSC" fq-name="OAGWBG.OAGWBG_MASTERMATERIALGPSC" order="14" x="2819" y="568">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="16" name="OAGWBG_MASTERORGANIZATION" fq-name="OAGWBG.OAGWBG_MASTERORGANIZATION" order="15" x="3135" y="892">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="17" name="OAGWBG_MASTERCOSTCENTER" fq-name="OAGWBG.OAGWBG_MASTERCOSTCENTER" order="16" x="974" y="578">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="18" name="OAGWBG_MASTERBANK" fq-name="OAGWBG.OAGWBG_MASTERBANK" order="17" x="1244" y="578">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="19" name="OAGWBG_MASTERSTANDARDPRICE" fq-name="OAGWBG.OAGWBG_MASTERSTANDARDPRICE" order="18" x="3135" y="568">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="20" name="OAGWBG_MASTERWAREHOUSE" fq-name="OAGWBG.OAGWBG_MASTERWAREHOUSE" order="19" x="1874" y="284">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="21" name="OAGWBG_MASTERPROVINCE" fq-name="OAGWBG.OAGWBG_MASTERPROVINCE" order="20" x="974" y="942">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="22" name="OAGWBG_MASTERAMPHUR" fq-name="OAGWBG.OAGWBG_MASTERAMPHUR" order="21" x="673" y="952">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="23" name="OAGWBG_MASTERTAMBON" fq-name="OAGWBG.OAGWBG_MASTERTAMBON" order="22" x="1244" y="942">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="24" name="OAGWBG_MASTERUNIT" fq-name="OAGWBG.OAGWBG_MASTERUNIT" order="23" x="2228" y="284">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="25" name="OAGWBG_MASTERSTATUS" fq-name="OAGWBG.OAGWBG_MASTERSTATUS" order="24" x="40" y="294">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="26" name="OAGWBG_MASTERSTRATEGIC" fq-name="OAGWBG.OAGWBG_MASTERSTRATEGIC" order="25" x="40" y="50">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="27" name="OAGWBG_MASTERSTRATEGYCODE" fq-name="OAGWBG.OAGWBG_MASTERSTRATEGYCODE" order="26" x="1874" y="922">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="28" name="OAGWBG_MASTERNAMEPREFIX" fq-name="OAGWBG.OAGWBG_MASTERNAMEPREFIX" order="27" x="344" y="294">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="29" name="OAGWBG_MASTERPOSITION" fq-name="OAGWBG.OAGWBG_MASTERPOSITION" order="28" x="2561" y="284">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="30" name="OAGWBG_MASTEROFFICERTYPE" fq-name="OAGWBG.OAGWBG_MASTEROFFICERTYPE" order="29" x="1244" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="31" name="OAGWBG_MASTERBENEFITSRECEIVEGROUP" fq-name="OAGWBG.OAGWBG_MASTERBENEFITSRECEIVEGROUP" order="30" x="1517" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="32" name="OAGWBG_MASTERMONEYSOURCE" fq-name="OAGWBG.OAGWBG_MASTERMONEYSOURCE" order="31" x="2819" y="284">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="33" name="OAGWBG_MASTERDOCUMENTTYPE" fq-name="OAGWBG.OAGWBG_MASTERDOCUMENTTYPE" order="32" x="3135" y="284">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="34" name="OAGWBG_MASTERNOTIFICATION" fq-name="OAGWBG.OAGWBG_MASTERNOTIFICATION" order="33" x="1517" y="578">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="35" name="OAGWBG_MASTERACTIVITYLOGTYPE" fq-name="OAGWBG.OAGWBG_MASTERACTIVITYLOGTYPE" order="34" x="1874" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="36" name="OAGWBG_MASTERSYSTEMNAME" fq-name="OAGWBG.OAGWBG_MASTERSYSTEMNAME" order="35" x="2228" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="37" name="OAGWBG_MASTERPOLICYCOMMAND" fq-name="OAGWBG.OAGWBG_MASTERPOLICYCOMMAND" order="36" x="40" y="962">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="38" name="OAGWBG_MASTERPROBLEM" fq-name="OAGWBG.OAGWBG_MASTERPROBLEM" order="37" x="2561" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="39" name="OAGWBG_MASTERRETURNREASON" fq-name="OAGWBG.OAGWBG_MASTERRETURNREASON" order="38" x="2819" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="40" name="OAGWBG_MASTERSTOREPLACE" fq-name="OAGWBG.OAGWBG_MASTERSTOREPLACE" order="39" x="344" y="962">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="41" name="OAGWBG_MASTERDISBURSEMENTOUTSIDETYPE" fq-name="OAGWBG.OAGWBG_MASTERDISBURSEMENTOUTSIDETYPE" order="40" x="1874" y="578">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="42" name="OAGWBG_MASTERFUELTYPE" fq-name="OAGWBG.OAGWBG_MASTERFUELTYPE" order="41" x="3135" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="43" name="OAGWBG_MASTERLANDTYPE" fq-name="OAGWBG.OAGWBG_MASTERLANDTYPE" order="42" x="673" y="294">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="44" name="OAGWBG_MASTERMONTH" fq-name="OAGWBG.OAGWBG_MASTERMONTH" order="43" x="974" y="294">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations/>
+</diagram>
