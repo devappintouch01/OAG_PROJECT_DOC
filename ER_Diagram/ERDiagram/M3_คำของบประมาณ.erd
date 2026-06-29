@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M2.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_BUDGETGOVERNMENT" fq-name="OAGWBG.OAGWBG_BUDGETGOVERNMENT" order="0" x="372" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_BUDGETGOVERNMENTASSETITEM" fq-name="OAGWBG.OAGWBG_BUDGETGOVERNMENTASSETITEM" order="1" x="40" y="248">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_BUDGETGOVERNMENTITEM" fq-name="OAGWBG.OAGWBG_BUDGETGOVERNMENTITEM" order="2" x="40" y="532">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_BUDGETREQUEST" fq-name="OAGWBG.OAGWBG_BUDGETREQUEST" order="3" x="683" y="260">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_BUDGETREQUESTOUTSIDE" fq-name="OAGWBG.OAGWBG_BUDGETREQUESTOUTSIDE" order="4" x="1161" y="403">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="6" name="OAGWBG_BUDGETREQUISITION" fq-name="OAGWBG.OAGWBG_BUDGETREQUISITION" order="5" x="916" y="444">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations>
+		<relation name="vfk_OAGWBG_BUDGETGOVERNMENTITEM_OAGWBG_BUDGETGOVERNMENT" type="vfk" pk-ref="1" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_BUDGETGOVERNMENTASSETITEM_OAGWBG_BUDGETGOVERNMENT" type="vfk" pk-ref="1" fk-ref="2"/>
+		<relation name="vfk_OAGWBG_BUDGETGOVERNMENT_OAGWBG_BUDGETREQUEST" type="vfk" pk-ref="4" fk-ref="1"/>
+	</relations>
+</diagram>

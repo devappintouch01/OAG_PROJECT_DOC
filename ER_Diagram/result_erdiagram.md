@@ -6,6 +6,22 @@
 
 ---
 
+## สรุปความคืบหน้า
+
+| โมดูล | | ชื่อ | ตาราง | Virtual FK |
+|---|---|---|---|---|
+| M1 | ✅ | โอน/รับโอนงบ | 5 | 6 เส้น |
+| M2 | ✅ | จัดสรร/โอนจัดสรร | 6 | 4 เส้น |
+| M3 | ✅ | คำของบประมาณ | 6 | 5 เส้น |
+| M4 | ⬜ | รับงบ/รอบงบ | 5 | 3 เส้น |
+| M5 | ⬜ | แผนเบิกจ่าย | 8 | 7 เส้น |
+| M6 | ⬜ | กันเงิน/คืนงบ | 6 | 5 เส้น |
+| M7 | ⬜ | สินทรัพย์ | 20 | 18 เส้น |
+| M8 | ⬜ | Master data | ~45 | 2 เส้น |
+| M9 | ⬜ | ผู้ใช้/สิทธิ์ | 13 | 8 เส้น |
+
+---
+
 ## M1 — โอน/รับโอนงบประมาณ
 
 **สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
@@ -41,25 +57,276 @@
 ---
 
 ## M2 — จัดสรร/โอนจัดสรร
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M2_จัดสรร-โอนจัดสรร.png`](ERDiagram/M2_จัดสรร-โอนจัดสรร.png) | [`ERDiagram/M2_จัดสรร-โอนจัดสรร.erd`](ERDiagram/M2_จัดสรร-โอนจัดสรร.erd)
+
+<img src="ERDiagram/M2_จัดสรร-โอนจัดสรร.png" style="border: 1px solid black;" width="100%">
+
+### ตารางในรูป (6 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_BUDGETALLOCATETRANSFER` | Header โอนจัดสรร |
+| `OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY` | หมวดงบของโอนจัดสรร |
+| `OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER` | Cost center ของโอนจัดสรร |
+| `OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER_NOTE` | หมายเหตุ cost center |
+| `OAGWBG_BUDGETALLOCATETRANSFERMORE` | รายการเพิ่มเติม |
+| `OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY` | หมวดของรายการเพิ่มเติม |
+
+### Virtual FK (4 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ✅ | BUDGETALLOCATETRANSFER_CATEGORY | `BUDGETALLOCATETRANSFERID` | BUDGETALLOCATETRANSFER | `ID` |
+| 2 | ✅ | BUDGETALLOCATETRANSFER_COSTCENTER | `BUDGETALLOCATETRANSFERID` | BUDGETALLOCATETRANSFER | `ID` |
+| 3 | ✅ | BUDGETALLOCATETRANSFER_COSTCENTER_NOTE | `RECEIVEID` | BUDGETALLOCATETRANSFER | `ID` |
+| 4 | ✅ | BUDGETALLOCATETRANSFERMORE_CATEGORY | `BUDGETALLOCATETRANSFERMOREID` | BUDGETALLOCATETRANSFERMORE | `ID` |
+
+---
 
 ## M3 — คำของบประมาณ
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M3_คำของบประมาณ.png`](ERDiagram/M3_คำของบประมาณ.png) | [`ERDiagram/M3_คำของบประมาณ.erd`](ERDiagram/M3_คำของบประมาณ.erd)
+**หมายเหตุ:** SA ถามถึง `BUDGETREQUESTOUTSIDE` — อยู่ใน M3 นี้
+
+<img src="ERDiagram/M3_คำของบประมาณ.png" style="border: 1px solid black;" width="100%">
+
+### ตารางที่ต้องเลือกใน DBeaver (6 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_BUDGETREQUEST` | คำของบประมาณหลัก |
+| `OAGWBG_BUDGETREQUESTOUTSIDE` | คำของบประมาณนอกแผน |
+| `OAGWBG_BUDGETREQUISITION` | ใบเบิก/ขอซื้อ |
+| `OAGWBG_BUDGETGOVERNMENT` | งบรัฐบาล |
+| `OAGWBG_BUDGETGOVERNMENTITEM` | รายการงบรัฐบาล |
+| `OAGWBG_BUDGETGOVERNMENTASSETITEM` | รายการสินทรัพย์ในงบรัฐบาล |
+
+### Virtual FK (5 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ✅ | BUDGETGOVERNMENT | `BUDGETREQUESTID` | BUDGETREQUEST | `ID` |
+| 2 | ⏭️ | BUDGETGOVERNMENT | `REF_BUDGETGOVERNMENTID` | BUDGETGOVERNMENT | `ID` (self) |
+| 3 | ✅ | BUDGETGOVERNMENTITEM | `BUDGETGOVERNMENTID` | BUDGETGOVERNMENT | `ID` |
+| 4 | ✅ | BUDGETGOVERNMENTASSETITEM | `BUDGETGOVERNMENTID` | BUDGETGOVERNMENT | `ID` |
+| 5 | ⏭️ | BUDGETREQUEST | `PARENTID` | BUDGETREQUEST | `ID` (self) |
+
+> `BUDGETREQUESTOUTSIDE` และ `BUDGETREQUISITION` ไม่มี FK ชัดเจนไปตารางอื่นใน M3 — แสดงเป็นกล่องลอยในรูป
+
+---
 
 ## M4 — รับงบ/รอบงบ (Receive Period)
+
 **สถานะ:** ⬜ ยังไม่ได้ทำ
+
+### ตารางที่ต้องเลือกใน DBeaver (5 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_BUDGETRECEIVE` | รับงบ (ใช้ร่วมกับ M1) |
+| `OAGWBG_BUDGETRECEIVEPERIOD` | รอบการรับงบ |
+| `OAGWBG_BUDGETRECEIVEPERIODALLOCATION` | การจัดสรรในรอบ |
+| `OAGWBG_BUDGETRECEIVEPERIODCATEGORY` | หมวดในรอบ |
+| `OAGWBG_BUDGETRECEIVEPERIODREQUEST` | คำขอในรอบ |
+
+### Virtual FK (3 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ⬜ | BUDGETRECEIVEPERIODALLOCATION | `BUDGETRECEIVEPERIODID` | BUDGETRECEIVEPERIOD | `ID` |
+| 2 | ⬜ | BUDGETRECEIVEPERIODCATEGORY | `BUDGETRECEIVEPERIODID` | BUDGETRECEIVEPERIOD | `ID` |
+| 3 | ⬜ | BUDGETRECEIVEPERIOD | `BUDGETGOVERNMENTID` | BUDGETGOVERNMENT (M3) | `ID` |
+
+> เส้นที่ 3 ข้ามโมดูล M4→M3 — ใส่หรือไม่ใส่ตามดุลพินิจ
+
+---
 
 ## M5 — แผนเบิกจ่าย
+
 **สถานะ:** ⬜ ยังไม่ได้ทำ
+
+### ตารางที่ต้องเลือกใน DBeaver (8 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_BUDGETDISBURSEMENTPLAN` | แผนเบิกจ่าย (header) |
+| `OAGWBG_BUDGETDISBURSEMENTPLANITEM` | รายการในแผน |
+| `OAGWBG_BUDGETDISBURSEMENTPLANRECEIVE` | การรับตามแผน |
+| `OAGWBG_BUDGETDISBURSEMENTESTIMATED` | ประมาณการเบิก |
+| `OAGWBG_BUDGETDISBURSEMENT` | การเบิกจ่าย (header) |
+| `OAGWBG_BUDGETDISBURSEMENTITEM` | รายการเบิกจ่าย |
+| `OAGWBG_BUDGETDISBURSEMENTAVERAGE` | ค่าเฉลี่ยเบิก |
+| `OAGWBG_BUDGETDISBURSEMENTOUTSIDEITEM` | รายการเบิกนอกแผน |
+
+### Virtual FK (7 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ⬜ | BUDGETDISBURSEMENTPLANITEM | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
+| 2 | ⬜ | BUDGETDISBURSEMENTPLANRECEIVE | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
+| 3 | ⬜ | BUDGETDISBURSEMENTESTIMATED | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
+| 4 | ⬜ | BUDGETDISBURSEMENT | `BUDGETDISBURSEMENTPARENTID` | BUDGETDISBURSEMENT | `ID` (self) |
+| 5 | ⬜ | BUDGETDISBURSEMENTITEM | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
+| 6 | ⬜ | BUDGETDISBURSEMENTAVERAGE | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
+| 7 | ⬜ | BUDGETDISBURSEMENTOUTSIDEITEM | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
+
+---
 
 ## M6 — กันเงิน / คืนงบ
+
 **สถานะ:** ⬜ ยังไม่ได้ทำ
+
+### ตารางที่ต้องเลือกใน DBeaver (6 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_BUDGETRESERVED` | กันเงิน (header) |
+| `OAGWBG_BUDGETRESERVEDITEM` | รายการกันเงิน |
+| `OAGWBG_BUDGETRESERVED_CATEGORY` | หมวดกันเงิน |
+| `OAGWBG_BUDGETRESERVED_BANKACCOUNT` | บัญชีธนาคารที่กันเงิน |
+| `OAGWBG_BUDGETREFUND` | คืนงบ (header) |
+| `OAGWBG_BUDGETREFUNDHISTORY` | ประวัติการคืนงบ |
+
+### Virtual FK (5 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ⬜ | BUDGETRESERVEDITEM | `BUDGETREVERSEDID` | BUDGETRESERVED | `ID` |
+| 2 | ⬜ | BUDGETRESERVED_CATEGORY | `BUDGETRESERVEDID` | BUDGETRESERVED | `ID` |
+| 3 | ⬜ | BUDGETRESERVED_BANKACCOUNT | `RESERVEDID` | BUDGETRESERVED | `ID` |
+| 4 | ⬜ | BUDGETRESERVEDITEM | `PARENTID` | BUDGETRESERVEDITEM | `ID` (self) |
+| 5 | ⬜ | BUDGETREFUNDHISTORY | `TARGETBUDGETREFUNDID` | BUDGETREFUND | `ID` |
 
 ## M7 — สินทรัพย์ (Asset)
+
 **สถานะ:** ⬜ ยังไม่ได้ทำ
+
+### ตารางที่ต้องเลือกใน DBeaver (20 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_ASSET` | ทะเบียนสินทรัพย์หลัก |
+| `OAGWBG_ASSETIMAGE` | รูปภาพสินทรัพย์ |
+| `OAGWBG_ASSETTRACKIMAGE` | รูปติดตามสินทรัพย์ |
+| `OAGWBG_ASSETRELATION` | ความสัมพันธ์ระหว่างสินทรัพย์ |
+| `OAGWBG_ASSETCHANGE` | บันทึกการเปลี่ยนแปลง |
+| `OAGWBG_ASSETDEPRECIATION` | ค่าเสื่อมราคา |
+| `OAGWBG_ASSETBORROW` | การยืมสินทรัพย์ (header) |
+| `OAGWBG_ASSETBORROWITEM` | รายการยืม |
+| `OAGWBG_ASSETTRANSFER` | การโอนสินทรัพย์ (header) |
+| `OAGWBG_ASSETTRANSFERITEM` | รายการโอน |
+| `OAGWBG_ASSETREQUISITION` | ใบขอซื้อสินทรัพย์ (header) |
+| `OAGWBG_ASSETREQUISITIONITEM` | รายการขอซื้อ |
+| `OAGWBG_ASSETRETURN` | การส่งคืนสินทรัพย์ (header) |
+| `OAGWBG_ASSETRETURNITEM` | รายการส่งคืน |
+| `OAGWBG_ASSETWRITEOFF` | การตัดจำหน่าย (header) |
+| `OAGWBG_ASSETWRITEOFFITEM` | รายการตัดจำหน่าย |
+| `OAGWBG_ASSETMAINTENANCE` | การซ่อมบำรุง (header) |
+| `OAGWBG_ASSETMAINTENANCEFORM` | แบบฟอร์มซ่อมบำรุง |
+| `OAGWBG_ASSETMAINTENANCEFORMITEM` | รายการซ่อมบำรุง |
+| `OAGWBG_ASSETMAINTENANCEFORMITEMLIST` | รายละเอียดซ่อมบำรุง |
+
+### Virtual FK (14 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ⬜ | ASSETIMAGE | `ASSETID` | ASSET | `ID` |
+| 2 | ⬜ | ASSETTRACKIMAGE | `ASSETID` | ASSET | `ID` |
+| 3 | ⬜ | ASSETRELATION | `ASSETID` | ASSET | `ID` |
+| 4 | ⬜ | ASSETCHANGE | `ASSETID` | ASSET | `ID` |
+| 5 | ⬜ | ASSETDEPRECIATION | `ASSETID` | ASSET | `ID` |
+| 6 | ⬜ | ASSETBORROWITEM | `ASSETBORROWID` | ASSETBORROW | `ID` |
+| 7 | ⬜ | ASSETBORROWITEM | `ASSETID` | ASSET | `ID` |
+| 8 | ⬜ | ASSETTRANSFERITEM | `ASSETTRANSFERID` | ASSETTRANSFER | `ID` |
+| 9 | ⬜ | ASSETTRANSFERITEM | `ASSETID` | ASSET | `ID` |
+| 10 | ⬜ | ASSETREQUISITIONITEM | `ASSETREQUISITIONID` | ASSETREQUISITION | `ID` |
+| 11 | ⬜ | ASSETREQUISITIONITEM | `ASSETID` | ASSET | `ID` |
+| 12 | ⬜ | ASSETRETURNITEM | `ASSETRETURNID` | ASSETRETURN | `ID` |
+| 13 | ⬜ | ASSETRETURNITEM | `ASSETID` | ASSET | `ID` |
+| 14 | ⬜ | ASSETWRITEOFFITEM | `ASSETWRITEOFFID` | ASSETWRITEOFF | `ID` |
+| 15 | ⬜ | ASSETWRITEOFFITEM | `ASSETID` | ASSET | `ID` |
+| 16 | ⬜ | ASSETMAINTENANCE | `ASSETID` | ASSET | `ID` |
+| 17 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETMAINTENANCEFORMID` | ASSETMAINTENANCEFORM | `ID` |
+| 18 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETID` | ASSET | `ID` |
+
+> M7 ใหญ่มาก — ถ้า diagram รกเกินไปอาจแตกเป็น M7a (ASSET core) และ M7b (Transaction) ได้
+
+---
 
 ## M8 — Master data
+
 **สถานะ:** ⬜ ยังไม่ได้ทำ
 
+### ตารางที่ต้องเลือกใน DBeaver (~45 ตาราง — เลือกเฉพาะที่มี FK ระหว่างกัน)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_MASTERASSETCLASS` | หมวดสินทรัพย์ |
+| `OAGWBG_MASTERASSETTYPE` | ประเภทสินทรัพย์ |
+| `OAGWBG_MASTERASSETTYPESUB` | ประเภทย่อยสินทรัพย์ |
+| `OAGWBG_MASTERBUDGETEXPENSETYPE` | ประเภทรายจ่าย |
+| `OAGWBG_MASTERBUDGETTYPE` | ประเภทงบประมาณ |
+| `OAGWBG_MASTERBUDGETFORMTYPE` | ประเภทแบบฟอร์มงบ |
+| `OAGWBG_MASTERBANK` | ธนาคาร |
+| `OAGWBG_MASTERCOSTCENTER` | ศูนย์ต้นทุน |
+| `OAGWBG_MASTERORGANIZATION` | หน่วยงาน |
+| `OAGWBG_MASTERUNIT` | หน่วยนับ |
+| `OAGWBG_MASTERSTATUS` | สถานะ (ใช้ร่วมกันหลายโมดูล) |
+| `OAGWBG_MASTERFUND` | แหล่งเงิน |
+| `OAGWBG_MASTERMATERIAL` | วัสดุ |
+| `OAGWBG_MASTERMATERIALGROUP` | กลุ่มวัสดุ |
+| `OAGWBG_MASTERPROCUREMENTMETHOD` | วิธีจัดซื้อ |
+| `OAGWBG_MASTERPROCUREMENTMETHODSTEP` | ขั้นตอนวิธีจัดซื้อ |
+| `OAGWBG_MASTERWAREHOUSE` | คลังพัสดุ |
+| `OAGWBG_MASTERSTANDARDPRICE` | ราคามาตรฐาน |
+| `OAGWBG_MASTERAMPHUR` / `MASTERPROVINCE` / `MASTERTAMBON` | ที่อยู่ |
+| ฯลฯ (ตาราง MASTER อื่นๆ อีก ~25 ตาราง) | lookup ต่างๆ |
+
+### Virtual FK (ที่มีความสัมพันธ์ชัดเจน)
+
+| # | สถานะ | Child Table | Column | Parent Table | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ⬜ | MASTERASSETTYPESUB | `ASSETTYPEID` | MASTERASSETTYPE | `ID` |
+| 2 | ⬜ | MASTERPROCUREMENTMETHODSTEP | `PROCUREMENTMETHODID` | MASTERPROCUREMENTMETHOD | `ID` |
+
+> Master ส่วนใหญ่เป็น lookup อิสระ — FK น้อยมาก พิจารณาทำเป็นรูปรายชื่อตาราง (index) แทน diagram เส้นก็ได้
+
+---
+
 ## M9 — ผู้ใช้ / สิทธิ์ / ระบบ
+
 **สถานะ:** ⬜ ยังไม่ได้ทำ
+
+### ตารางที่ต้องเลือกใน DBeaver (12 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_SYSTEMUSER` | ผู้ใช้งาน |
+| `OAGWBG_SYSTEMUSERLINE` | LINE account ของผู้ใช้ |
+| `OAGWBG_SYSTEMROLE` | Role/กลุ่มสิทธิ์ |
+| `OAGWBG_SYSTEMPERMISSION` | Permission ย่อย |
+| `OAGWBG_SYSTEMUSERROLEASSIGN` | มอบหมาย Role → User |
+| `OAGWBG_SYSTEMMENU` | เมนูระบบ |
+| `OAGWBG_SYSTEMMENUGROUP` | กลุ่มเมนู |
+| `OAGWBG_SYSTEMMENUROLEASSIGN` | มอบหมาย Menu → Role |
+| `OAGWBG_SYSTEMWEBMENU` | Web menu |
+| `OAGWBG_WORKFLOWJOB` | งาน Workflow |
+| `OAGWBG_WORKFLOWJOBLOG` | Log workflow |
+| `OAGWBG_CANCELREASONLOG` | Log เหตุผลยกเลิก |
+| `OAGWBG_LOG_INTERFACE` | Log ส่ง interface ไป Oracle EBS |
+
+### Virtual FK (8 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ⬜ | SYSTEMUSERLINE | `SYSTEMUSERID` | SYSTEMUSER | `ID` |
+| 2 | ⬜ | SYSTEMUSERROLEASSIGN | `SYSTEMUSERID` | SYSTEMUSER | `ID` |
+| 3 | ⬜ | SYSTEMUSERROLEASSIGN | `SYSTEMROLEID` | SYSTEMROLE | `ID` |
+| 4 | ⬜ | SYSTEMUSERROLEASSIGN | `SYSTEMMENUGROUPID` | SYSTEMMENUGROUP | `ID` |
+| 5 | ⬜ | SYSTEMMENUROLEASSIGN | `SYSTEMROLEID` | SYSTEMROLE | `ID` |
+| 6 | ⬜ | SYSTEMMENUROLEASSIGN | `SYSTEMMENUID` | SYSTEMMENU | `ID` |
+| 7 | ⬜ | SYSTEMMENU | `PARENTMENUID` | SYSTEMMENU | `ID` (self) |
+| 8 | ⬜ | SYSTEMMENU | `SYSTEMMENUGROUPID` | SYSTEMMENUGROUP | `ID` |
