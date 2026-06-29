@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M6_กันเงิน-คืนงบ.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_BUDGETRESERVED" fq-name="OAGWBG.OAGWBG_BUDGETRESERVED" order="0" x="369" y="15">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_BUDGETRESERVEDITEM" fq-name="OAGWBG.OAGWBG_BUDGETRESERVEDITEM" order="1" x="644" y="17">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_BUDGETRESERVED_CATEGORY" fq-name="OAGWBG.OAGWBG_BUDGETRESERVED_CATEGORY" order="2" x="22" y="13">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_BUDGETRESERVED_BANKACCOUNT" fq-name="OAGWBG.OAGWBG_BUDGETRESERVED_BANKACCOUNT" order="3" x="22" y="352">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_BUDGETREFUND" fq-name="OAGWBG.OAGWBG_BUDGETREFUND" order="4" x="375" y="564">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="6" name="OAGWBG_BUDGETREFUNDHISTORY" fq-name="OAGWBG.OAGWBG_BUDGETREFUNDHISTORY" order="5" x="26" y="575">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations>
+		<relation name="vfk_OAGWBG_BUDGETRESERVEDITEM_OAGWBG_BUDGETRESERVED" type="vfk" pk-ref="1" fk-ref="2"/>
+		<relation name="vfk_OAGWBG_BUDGETRESERVED_CATEGORY_OAGWBG_BUDGETRESERVED" type="vfk" pk-ref="1" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_BUDGETRESERVED_BANKACCOUNT_OAGWBG_BUDGETRESERVED" type="vfk" pk-ref="1" fk-ref="4"/>
+	</relations>
+</diagram>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram version="1" name="M5_แผนเบิกจ่าย.erd">
+	<entities>
+		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
+			<entity id="1" name="OAGWBG_BUDGETDISBURSEMENTPLAN" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENTPLAN" order="0" x="361" y="41">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="2" name="OAGWBG_BUDGETDISBURSEMENTPLANITEM" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENTPLANITEM" order="1" x="40" y="40">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="3" name="OAGWBG_BUDGETDISBURSEMENTPLANRECEIVE" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENTPLANRECEIVE" order="2" x="35" y="761">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="4" name="OAGWBG_BUDGETDISBURSEMENTESTIMATED" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENTESTIMATED" order="3" x="397" y="581">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="5" name="OAGWBG_BUDGETDISBURSEMENT" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENT" order="4" x="701" y="43">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="6" name="OAGWBG_BUDGETDISBURSEMENTITEM" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENTITEM" order="5" x="1003" y="29">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="7" name="OAGWBG_BUDGETDISBURSEMENTAVERAGE" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENTAVERAGE" order="6" x="1001" y="364">
+				<path name="OAGWBG"/>
+			</entity>
+			<entity id="8" name="OAGWBG_BUDGETDISBURSEMENTOUTSIDEITEM" fq-name="OAGWBG.OAGWBG_BUDGETDISBURSEMENTOUTSIDEITEM" order="7" x="695" y="748">
+				<path name="OAGWBG"/>
+			</entity>
+		</data-source>
+	</entities>
+	<relations>
+		<relation name="vfk_OAGWBG_BUDGETDISBURSEMENTPLANITEM_OAGWBG_BUDGETDISBURSEMENTPLAN" type="vfk" pk-ref="1" fk-ref="2"/>
+		<relation name="vfk_OAGWBG_BUDGETDISBURSEMENTPLANRECEIVE_OAGWBG_BUDGETDISBURSEMENTPLAN" type="vfk" pk-ref="1" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_BUDGETDISBURSEMENTESTIMATED_OAGWBG_BUDGETDISBURSEMENTPLAN" type="vfk" pk-ref="1" fk-ref="4"/>
+		<relation name="vfk_OAGWBG_BUDGETDISBURSEMENTITEM_OAGWBG_BUDGETDISBURSEMENT" type="vfk" pk-ref="5" fk-ref="6"/>
+		<relation name="vfk_OAGWBG_BUDGETDISBURSEMENTAVERAGE_OAGWBG_BUDGETDISBURSEMENT" type="vfk" pk-ref="5" fk-ref="7"/>
+		<relation name="vfk_OAGWBG_BUDGETDISBURSEMENTOUTSIDEITEM_OAGWBG_BUDGETDISBURSEMENT" type="vfk" pk-ref="5" fk-ref="8"/>
+	</relations>
+</diagram>

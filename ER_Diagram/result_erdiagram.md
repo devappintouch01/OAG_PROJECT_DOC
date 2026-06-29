@@ -8,17 +8,18 @@
 
 ## สรุปความคืบหน้า
 
-| โมดูล | | ชื่อ | ตาราง | Virtual FK |
-|---|---|---|---|---|
-| M1 | ✅ | โอน/รับโอนงบ | 5 | 6 เส้น |
-| M2 | ✅ | จัดสรร/โอนจัดสรร | 6 | 4 เส้น |
-| M3 | ✅ | คำของบประมาณ | 6 | 5 เส้น |
-| M4 | ✅ | รับงบ/รอบงบ | 5 | 3 เส้น |
-| M5 | ⬜ | แผนเบิกจ่าย | 8 | 7 เส้น |
-| M6 | ⬜ | กันเงิน/คืนงบ | 6 | 5 เส้น |
-| M7 | ⬜ | สินทรัพย์ | 20 | 18 เส้น |
-| M8 | ⬜ | Master data | ~45 | 2 เส้น |
-| M9 | ⬜ | ผู้ใช้/สิทธิ์ | 13 | 8 เส้น |
+| สถานะ | โมดูล | ชื่อ | ตาราง | Virtual FK |
+|:---:|:---:|---|---|---|
+| ✅ | M1 | โอน/รับโอนงบ | 5 | 6 เส้น |
+| ✅ | M2 | จัดสรร/โอนจัดสรร | 6 | 4 เส้น |
+| ✅ | M3 | คำของบประมาณ | 6 | 5 เส้น |
+| ✅ | M4 | รับงบ/รอบงบ | 5 | 3 เส้น |
+| ✅ | M5 | แผนเบิกจ่าย | 8 | 6 เส้น |
+| ✅ | M6 | กันเงิน/คืนงบ | 6 | 3 เส้น |
+| ⬜ | M7a | สินทรัพย์ (ทะเบียน+ยืม+โอน) | 10 | 9 เส้น |
+| ⬜ | M7b | สินทรัพย์ (ขอซื้อ+คืน+ตัด+ซ่อม) | 11 | 9 เส้น |
+| ⬜ | M8 | Master data | ~45 | 2 เส้น |
+| ✅ | M9 | ผู้ใช้/สิทธิ์ | 9 | 6 เส้น |
 
 ---
 
@@ -149,9 +150,12 @@
 
 ## M5 — แผนเบิกจ่าย
 
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M5_แผนเบิกจ่าย.png`](ERDiagram/M5_แผนเบิกจ่าย.png) | [`ERDiagram/M5_แผนเบิกจ่าย.erd`](ERDiagram/M5_แผนเบิกจ่าย.erd)
 
-### ตารางที่ต้องเลือกใน DBeaver (8 ตาราง)
+<img src="ERDiagram/M5_แผนเบิกจ่าย.png" style="border: 1px solid black;" width="100%">
+
+### ตารางในรูป (8 ตาราง)
 
 | ตาราง | บทบาท |
 |---|---|
@@ -168,21 +172,24 @@
 
 | # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
 |---|---|---|---|---|---|
-| 1 | ⬜ | BUDGETDISBURSEMENTPLANITEM | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
-| 2 | ⬜ | BUDGETDISBURSEMENTPLANRECEIVE | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
-| 3 | ⬜ | BUDGETDISBURSEMENTESTIMATED | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
-| 4 | ⬜ | BUDGETDISBURSEMENT | `BUDGETDISBURSEMENTPARENTID` | BUDGETDISBURSEMENT | `ID` (self) |
-| 5 | ⬜ | BUDGETDISBURSEMENTITEM | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
-| 6 | ⬜ | BUDGETDISBURSEMENTAVERAGE | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
-| 7 | ⬜ | BUDGETDISBURSEMENTOUTSIDEITEM | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
+| 1 | ✅ | BUDGETDISBURSEMENTPLANITEM | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
+| 2 | ✅ | BUDGETDISBURSEMENTPLANRECEIVE | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
+| 3 | ✅ | BUDGETDISBURSEMENTESTIMATED | `BUDGETDISBURSEMENTPLANID` | BUDGETDISBURSEMENTPLAN | `ID` |
+| 4 | ⏭️ | BUDGETDISBURSEMENT | `BUDGETDISBURSEMENTPARENTID` | BUDGETDISBURSEMENT | `ID` (self) |
+| 5 | ✅ | BUDGETDISBURSEMENTITEM | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
+| 6 | ✅ | BUDGETDISBURSEMENTAVERAGE | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
+| 7 | ✅ | BUDGETDISBURSEMENTOUTSIDEITEM | `BUDGETDISBURSEMENTID` | BUDGETDISBURSEMENT | `ID` |
 
 ---
 
 ## M6 — กันเงิน / คืนงบ
 
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M6_กันเงิน-คืนงบ.png`](ERDiagram/M6_กันเงิน-คืนงบ.png) | [`ERDiagram/M6_กันเงิน-คืนงบ.erd`](ERDiagram/M6_กันเงิน-คืนงบ.erd)
 
-### ตารางที่ต้องเลือกใน DBeaver (6 ตาราง)
+<img src="ERDiagram/M6_กันเงิน-คืนงบ.png" style="border: 1px solid black;" width="100%">
+
+### ตารางในรูป (6 ตาราง)
 
 | ตาราง | บทบาท |
 |---|---|
@@ -197,17 +204,19 @@
 
 | # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
 |---|---|---|---|---|---|
-| 1 | ⬜ | BUDGETRESERVEDITEM | `BUDGETREVERSEDID` | BUDGETRESERVED | `ID` |
-| 2 | ⬜ | BUDGETRESERVED_CATEGORY | `BUDGETRESERVEDID` | BUDGETRESERVED | `ID` |
-| 3 | ⬜ | BUDGETRESERVED_BANKACCOUNT | `RESERVEDID` | BUDGETRESERVED | `ID` |
-| 4 | ⬜ | BUDGETRESERVEDITEM | `PARENTID` | BUDGETRESERVEDITEM | `ID` (self) |
-| 5 | ⬜ | BUDGETREFUNDHISTORY | `TARGETBUDGETREFUNDID` | BUDGETREFUND | `ID` |
+| 1 | ✅ | BUDGETRESERVEDITEM | `BUDGETREVERSEDID` | BUDGETRESERVED | `ID` |
+| 2 | ✅ | BUDGETRESERVED_CATEGORY | `BUDGETRESERVEDID` | BUDGETRESERVED | `ID` |
+| 3 | ✅ | BUDGETRESERVED_BANKACCOUNT | `RESERVEDID` | BUDGETRESERVED | `ID` |
+| 4 | ⏭️ | BUDGETRESERVEDITEM | `PARENTID` | BUDGETRESERVEDITEM | `ID` (self) |
+| 5 | ❌ | BUDGETREFUNDHISTORY | `TARGETBUDGETREFUNDID` | BUDGETREFUND | `ID` |
 
-## M7 — สินทรัพย์ (Asset)
+> เส้นที่ 5 ลากไม่ได้ — `BUDGETREFUND` ไม่มี Primary Key ใน DB ทำให้ DBeaver ไม่ยอม create virtual FK
+
+## M7a — สินทรัพย์ ทะเบียน+ยืม+โอน
 
 **สถานะ:** ⬜ ยังไม่ได้ทำ
 
-### ตารางที่ต้องเลือกใน DBeaver (20 ตาราง)
+### ตารางใน DBeaver (10 ตาราง)
 
 | ตาราง | บทบาท |
 |---|---|
@@ -221,18 +230,8 @@
 | `OAGWBG_ASSETBORROWITEM` | รายการยืม |
 | `OAGWBG_ASSETTRANSFER` | การโอนสินทรัพย์ (header) |
 | `OAGWBG_ASSETTRANSFERITEM` | รายการโอน |
-| `OAGWBG_ASSETREQUISITION` | ใบขอซื้อสินทรัพย์ (header) |
-| `OAGWBG_ASSETREQUISITIONITEM` | รายการขอซื้อ |
-| `OAGWBG_ASSETRETURN` | การส่งคืนสินทรัพย์ (header) |
-| `OAGWBG_ASSETRETURNITEM` | รายการส่งคืน |
-| `OAGWBG_ASSETWRITEOFF` | การตัดจำหน่าย (header) |
-| `OAGWBG_ASSETWRITEOFFITEM` | รายการตัดจำหน่าย |
-| `OAGWBG_ASSETMAINTENANCE` | การซ่อมบำรุง (header) |
-| `OAGWBG_ASSETMAINTENANCEFORM` | แบบฟอร์มซ่อมบำรุง |
-| `OAGWBG_ASSETMAINTENANCEFORMITEM` | รายการซ่อมบำรุง |
-| `OAGWBG_ASSETMAINTENANCEFORMITEMLIST` | รายละเอียดซ่อมบำรุง |
 
-### Virtual FK (14 เส้น)
+### Virtual FK (9 เส้น)
 
 | # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
 |---|---|---|---|---|---|
@@ -245,17 +244,44 @@
 | 7 | ⬜ | ASSETBORROWITEM | `ASSETID` | ASSET | `ID` |
 | 8 | ⬜ | ASSETTRANSFERITEM | `ASSETTRANSFERID` | ASSETTRANSFER | `ID` |
 | 9 | ⬜ | ASSETTRANSFERITEM | `ASSETID` | ASSET | `ID` |
-| 10 | ⬜ | ASSETREQUISITIONITEM | `ASSETREQUISITIONID` | ASSETREQUISITION | `ID` |
-| 11 | ⬜ | ASSETREQUISITIONITEM | `ASSETID` | ASSET | `ID` |
-| 12 | ⬜ | ASSETRETURNITEM | `ASSETRETURNID` | ASSETRETURN | `ID` |
-| 13 | ⬜ | ASSETRETURNITEM | `ASSETID` | ASSET | `ID` |
-| 14 | ⬜ | ASSETWRITEOFFITEM | `ASSETWRITEOFFID` | ASSETWRITEOFF | `ID` |
-| 15 | ⬜ | ASSETWRITEOFFITEM | `ASSETID` | ASSET | `ID` |
-| 16 | ⬜ | ASSETMAINTENANCE | `ASSETID` | ASSET | `ID` |
-| 17 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETMAINTENANCEFORMID` | ASSETMAINTENANCEFORM | `ID` |
-| 18 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETID` | ASSET | `ID` |
 
-> M7 ใหญ่มาก — ถ้า diagram รกเกินไปอาจแตกเป็น M7a (ASSET core) และ M7b (Transaction) ได้
+---
+
+## M7b — สินทรัพย์ ขอซื้อ+คืน+ตัดจำหน่าย+ซ่อมบำรุง
+
+**สถานะ:** ⬜ ยังไม่ได้ทำ
+
+### ตารางใน DBeaver (11 ตาราง)
+
+| ตาราง | บทบาท |
+|---|---|
+| `OAGWBG_ASSET` | ทะเบียนสินทรัพย์ (ref จาก M7a) |
+| `OAGWBG_ASSETREQUISITION` | ใบขอซื้อสินทรัพย์ (header) |
+| `OAGWBG_ASSETREQUISITIONITEM` | รายการขอซื้อ |
+| `OAGWBG_ASSETRETURN` | การส่งคืนสินทรัพย์ (header) |
+| `OAGWBG_ASSETRETURNITEM` | รายการส่งคืน |
+| `OAGWBG_ASSETWRITEOFF` | การตัดจำหน่าย (header) |
+| `OAGWBG_ASSETWRITEOFFITEM` | รายการตัดจำหน่าย |
+| `OAGWBG_ASSETMAINTENANCE` | การซ่อมบำรุง (header) |
+| `OAGWBG_ASSETMAINTENANCEFORM` | แบบฟอร์มซ่อมบำรุง |
+| `OAGWBG_ASSETMAINTENANCEFORMITEM` | รายการซ่อมบำรุง |
+| `OAGWBG_ASSETMAINTENANCEFORMITEMLIST` | รายละเอียดซ่อมบำรุง |
+
+### Virtual FK (9 เส้น)
+
+| # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
+|---|---|---|---|---|---|
+| 1 | ⬜ | ASSETREQUISITIONITEM | `ASSETREQUISITIONID` | ASSETREQUISITION | `ID` |
+| 2 | ⬜ | ASSETREQUISITIONITEM | `ASSETID` | ASSET | `ID` |
+| 3 | ⬜ | ASSETRETURNITEM | `ASSETRETURNID` | ASSETRETURN | `ID` |
+| 4 | ⬜ | ASSETRETURNITEM | `ASSETID` | ASSET | `ID` |
+| 5 | ⬜ | ASSETWRITEOFFITEM | `ASSETWRITEOFFID` | ASSETWRITEOFF | `ID` |
+| 6 | ⬜ | ASSETWRITEOFFITEM | `ASSETID` | ASSET | `ID` |
+| 7 | ⬜ | ASSETMAINTENANCE | `ASSETID` | ASSET | `ID` |
+| 8 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETMAINTENANCEFORMID` | ASSETMAINTENANCEFORM | `ID` |
+| 9 | ⬜ | ASSETMAINTENANCEFORMITEM | `ASSETID` | ASSET | `ID` |
+
+> `ASSETMAINTENANCEFORMITEMLIST` ลอย — ไม่มี FK ชัดเจนใน plan
 
 ---
 
@@ -301,35 +327,45 @@
 
 ## M9 — ผู้ใช้ / สิทธิ์ / ระบบ
 
-**สถานะ:** ⬜ ยังไม่ได้ทำ
+**สถานะ:** ✅ เสร็จแล้ว (2026-06-29)
+**ไฟล์:** [`ERDiagram/M9_ผู้ใช้-สิทธิ์.png`](ERDiagram/M9_ผู้ใช้-สิทธิ์.png) | [`ERDiagram/M9_ผู้ใช้-สิทธิ์.erd`](ERDiagram/M9_ผู้ใช้-สิทธิ์.erd)
 
-### ตารางที่ต้องเลือกใน DBeaver (12 ตาราง)
+<img src="ERDiagram/M9_ผู้ใช้-สิทธิ์.png" style="border: 1px solid black;" width="100%">
+
+### ตารางในรูป (9 ตาราง — จาก 13 ที่วางแผน)
+
+| ตาราง | บทบาท | หมายเหตุ |
+|---|---|---|
+| `OAGWBG_SYSTEMUSER` | ผู้ใช้งาน | ✅ มีใน DB |
+| `OAGWBG_SYSTEMROLE` | Role/กลุ่มสิทธิ์ | ✅ มีใน DB |
+| `OAGWBG_SYSTEMUSERROLEASSIGN` | มอบหมาย Role → User | ✅ มีใน DB |
+| `OAGWBG_SYSTEMMENU` | เมนูระบบ | ✅ มีใน DB |
+| `OAGWBG_SYSTEMMENUGROUP` | กลุ่มเมนู | ✅ มีใน DB |
+| `OAGWBG_SYSTEMMENUROLEASSIGN` | มอบหมาย Menu → Role | ✅ มีใน DB |
+| `OAGWBG_WORKFLOWJOBLOG` | Log workflow | ✅ มีใน DB |
+| `OAGWBG_CANCELREASONLOG` | Log เหตุผลยกเลิก | ✅ มีใน DB |
+| `OAGWBG_LOG_INTERFACE` | Log ส่ง interface ไป Oracle EBS | ✅ มีใน DB |
+
+### ตารางที่ไม่มีใน DB (code-only)
 
 | ตาราง | บทบาท |
 |---|---|
-| `OAGWBG_SYSTEMUSER` | ผู้ใช้งาน |
-| `OAGWBG_SYSTEMUSERLINE` | LINE account ของผู้ใช้ |
-| `OAGWBG_SYSTEMROLE` | Role/กลุ่มสิทธิ์ |
-| `OAGWBG_SYSTEMPERMISSION` | Permission ย่อย |
-| `OAGWBG_SYSTEMUSERROLEASSIGN` | มอบหมาย Role → User |
-| `OAGWBG_SYSTEMMENU` | เมนูระบบ |
-| `OAGWBG_SYSTEMMENUGROUP` | กลุ่มเมนู |
-| `OAGWBG_SYSTEMMENUROLEASSIGN` | มอบหมาย Menu → Role |
-| `OAGWBG_SYSTEMWEBMENU` | Web menu |
-| `OAGWBG_WORKFLOWJOB` | งาน Workflow |
-| `OAGWBG_WORKFLOWJOBLOG` | Log workflow |
-| `OAGWBG_CANCELREASONLOG` | Log เหตุผลยกเลิก |
-| `OAGWBG_LOG_INTERFACE` | Log ส่ง interface ไป Oracle EBS |
+| `OAGWBG_SYSTEMUSERLINE` | LINE account ของผู้ใช้ — **ไม่มีใน PREPROD** |
+| `OAGWBG_SYSTEMPERMISSION` | Permission ย่อย — **ไม่มีใน PREPROD** |
+| `OAGWBG_SYSTEMWEBMENU` | Web menu — **ไม่มีใน PREPROD** |
+| `OAGWBG_WORKFLOWJOB` | งาน Workflow — **ไม่มีใน PREPROD** (มีแค่ WORKFLOWJOBLOG) |
+
+> ขอให้ SA ยืนยันว่า feature ถูก cancel หรือยังวางแผนสร้างอยู่
 
 ### Virtual FK (8 เส้น)
 
 | # | สถานะ | Child Table (ลาก**จาก**) | Column | Parent Table (ลากไป) | Ref Col |
 |---|---|---|---|---|---|
-| 1 | ⬜ | SYSTEMUSERLINE | `SYSTEMUSERID` | SYSTEMUSER | `ID` |
-| 2 | ⬜ | SYSTEMUSERROLEASSIGN | `SYSTEMUSERID` | SYSTEMUSER | `ID` |
-| 3 | ⬜ | SYSTEMUSERROLEASSIGN | `SYSTEMROLEID` | SYSTEMROLE | `ID` |
-| 4 | ⬜ | SYSTEMUSERROLEASSIGN | `SYSTEMMENUGROUPID` | SYSTEMMENUGROUP | `ID` |
+| 1 | ⏭️ | SYSTEMUSERLINE | `SYSTEMUSERID` | SYSTEMUSER | `ID` |
+| 2 | ✅ | SYSTEMUSERROLEASSIGN | `SYSTEMUSERID` | SYSTEMUSER | `ID` |
+| 3 | ✅ | SYSTEMUSERROLEASSIGN | `SYSTEMROLEID` | SYSTEMROLE | `ID` |
+| 4 | ✅ | SYSTEMUSERROLEASSIGN | `SYSTEMMENUGROUPID` | SYSTEMMENUGROUP | `ID` |
 | 5 | ⬜ | SYSTEMMENUROLEASSIGN | `SYSTEMROLEID` | SYSTEMROLE | `ID` |
 | 6 | ⬜ | SYSTEMMENUROLEASSIGN | `SYSTEMMENUID` | SYSTEMMENU | `ID` |
-| 7 | ⬜ | SYSTEMMENU | `PARENTMENUID` | SYSTEMMENU | `ID` (self) |
-| 8 | ⬜ | SYSTEMMENU | `SYSTEMMENUGROUPID` | SYSTEMMENUGROUP | `ID` |
+| 7 | ⏭️ | SYSTEMMENU | `PARENTMENUID` | SYSTEMMENU | `ID` (self) |
+| 8 | ✅ | SYSTEMMENU | `SYSTEMMENUGROUPID` | SYSTEMMENUGROUP | `ID` |
