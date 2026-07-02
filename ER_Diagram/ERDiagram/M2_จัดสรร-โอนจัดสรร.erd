@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<diagram version="1" name="M2.erd">
+<diagram version="1" name="M2_จัดสรร-โอนจัดสรร.erd">
 	<entities>
 		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
 			<entity id="1" name="OAGWBG_BUDGETALLOCATETRANSFER" fq-name="OAGWBG.OAGWBG_BUDGETALLOCATETRANSFER" order="0" x="444" y="102">
 				<path name="OAGWBG"/>
 			</entity>
-			<entity id="2" name="OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY" fq-name="OAGWBG.OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY" order="1" x="22" y="11">
+			<entity id="2" name="OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY" fq-name="OAGWBG.OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY" order="1" border-width="3" x="20" y="20">
 				<path name="OAGWBG"/>
 			</entity>
 			<entity id="3" name="OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER" fq-name="OAGWBG.OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER" order="2" x="815" y="14">
@@ -26,7 +26,7 @@
 		<relation name="vfk_OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY_OAGWBG_BUDGETALLOCATETRANSFER" type="vfk" pk-ref="1" fk-ref="2"/>
 		<relation name="vfk_OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER_OAGWBG_BUDGETALLOCATETRANSFER" type="vfk" pk-ref="1" fk-ref="3"/>
 		<relation name="vfk_OAGWBG_BUDGETALLOCATETRANSFER_COSTCENTER_NOTE_OAGWBG_BUDGETALLOCATETRANSFER" type="vfk" pk-ref="1" fk-ref="4"/>
-		<relation name="FK_BATM_CAT_HEADER" fq-name="OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY.FK_BATM_CAT_HEADER" type="fk" pk-ref="5" fk-ref="6"/>
 		<relation name="vfk_OAGWBG_BUDGETALLOCATETRANSFER_CATEGORY_OAGWBG_BUDGETALLOCATETRANSFERMORE" type="vfk" pk-ref="5" fk-ref="2"/>
+		<relation name="FK_BATM_CAT_HEADER" fq-name="OAGWBG.OAGWBG_BUDGETALLOCATETRANSFERMORE_CATEGORY.FK_BATM_CAT_HEADER" type="fk" pk-ref="5" fk-ref="6"/>
 	</relations>
 </diagram>

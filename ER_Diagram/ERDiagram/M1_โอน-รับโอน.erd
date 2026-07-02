@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<diagram version="1" name="M1.erd">
+<diagram version="1" name="M1_โอน-รับโอน.erd">
 	<entities>
 		<data-source id="oracle_thin-19d4cf89238-3ee36d3adbee19e9">
 			<entity id="1" name="OAGWBG_BUDGETADJUST" fq-name="OAGWBG.OAGWBG_BUDGETADJUST" order="0" x="660" y="40">
@@ -22,6 +22,9 @@
 	<relations>
 		<relation name="vfk_OAGWBG_BUDGETRECEIVE_OAGWBG_BUDGETADJUST" type="vfk" pk-ref="1" fk-ref="2"/>
 		<relation name="vfk_OAGWBG_BUDGETRECEIVEREFUND_OAGWBG_BUDGETRECEIVE" type="vfk" pk-ref="2" fk-ref="3"/>
+		<relation name="vfk_OAGWBG_BUDGETADJUST_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="1"/>
+		<relation name="vfk_OAGWBG_BUDGETADJUST_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="1"/>
+		<relation name="vfk_OAGWBG_BUDGETADJUST_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="1"/>
 		<relation name="vfk_OAGWBG_BUDGETADJUST_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="1"/>
 		<relation name="vfk_OAGWBG_BUDGETRECEIVE_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="2"/>
 		<relation name="vfk_OAGWBG_BUDGETRECEIVEREFUND_OAGWBG_BUDGETTRANSFER" type="vfk" pk-ref="5" fk-ref="3">
