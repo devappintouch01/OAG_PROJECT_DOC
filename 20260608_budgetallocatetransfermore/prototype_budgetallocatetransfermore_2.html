@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prototype — โอนจัดสรรเพิ่มเติม (BudgetAllocateTransferMore) v2.4</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #f5f8fa;
+      font-size: 13px;
+    }
+
+    .table-primary th {
+      background: #d9edf9 !important;
+      font-weight: 600;
+    }
+
+    .text-unspecified {
+      color: #d32f2f;
+      font-weight: 600;
+    }
+
+    /* กลุ่ม Level 1 = เลขที่คำขอ (ส้ม) */
+    .grp-request {
+      background: #fbdfb4 !important;
+      font-weight: 600;
+    }
+
+    /* กลุ่ม Level 2 = แหล่งเงิน (เหลือง) */
+    .grp-source {
+      background: #fdeec8 !important;
+      font-weight: 600;
+    }
+
+    .ref-child {
+      background: #fbfdff;
+    }
+
+    .group-header {
+      background: #eef3f7;
+      font-weight: 600;
+    }
+
+    .note {
+      background: #fff8e1;
+      border-left: 4px solid #ffb300;
+      padding: 10px 14px;
+      margin: 14px 0;
+      font-size: 13px;
+    }
+
+    .legend {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .badge-new {
+      background: #00a3ff;
+      color: #fff;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      vertical-align: middle;
+    }
+
+    .btn-xs {
+      padding: 2px 7px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .cell-sm {
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body class="p-4">
+
+  <div class="container-fluid">
+    <h4 class="mb-1">Prototype — โอนจัดสรรเพิ่มเติม (BudgetAllocateTransferMore)</h4>
+    <p class="legend">เวอร์ชัน 2.3 — ตอบคำถามครบ Q1-11 แล้ว (2026-07-20) &nbsp;|&nbsp; <span
+        class="badge-new">ใหม่</span> = ส่วนที่ยังไม่มีในโค้ดปัจจุบัน</p>
+
+    <div class="note">
+      <b>ลำดับการแสดงผล 3 สถานะ</b> — กดปุ่มด้านล่างเพื่อสลับดู<br>
+      <span style="color:#c00">■</span> <b>สถานะ 2</b> = แถวกลุ่ม + แถวแม่ (รับโอน) แสดงหลังกด "เลือกรายการคำขอ" &nbsp;|&nbsp;
+      <span style="color:#0a0">■</span> ปุ่ม <i class="fa fa-building-columns"></i>
+      (<code>btn-select-transfer-account</code>) แสดง<b>หลังบันทึกครั้งที่ 1</b> &nbsp;|&nbsp;
+      <span style="color:#00c">■</span> แถวลูก (โอนออก) แสดงหลังกด "เพิ่มรายการใหม่" ใน modal บัญชีรับโอน (ฟอร์มเพิ่มใหม่ล้วน ไม่มีค้นหา/ไม่มีรายการให้เลือก)
+    </div>
+    <div class="mb-3">
+      <button class="btn btn-sm btn-outline-secondary" onclick="setStage(0)">สถานะ 1: เปิดหน้าใหม่ (ยังไม่ save)</button>
+      <button class="btn btn-sm btn-outline-danger" onclick="setStage(1)">สถานะ 2: เลือกคำขอแล้ว (ยังไม่ save)</button>
+      <button class="btn btn-sm btn-outline-primary" onclick="setStage(2)">สถานะ 3: หลังบันทึก + เลือกโอนออกแล้ว</button>
+    </div>
+
+    <!-- ══════════ Header + รายการ รวมเป็นการ์ดเดียว (pattern เดียวกับ BudgetAllocateTransferDetail.cshtml) ══════════ -->
+    <div class="card">
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-4 mb-2"><label class="form-label">ปีงบประมาณ</label>
+            <select class="form-select form-select-sm">
+              <option>2569</option>
+              <option>2568</option>
+            </select>
+          </div>
+          <div class="col-md-4 mb-2"><label class="form-label">เลขที่หนังสือ</label><input
+              class="form-control form-control-sm" value="อส 0201/ว123"></div>
+          <div class="col-md-4 mb-2"><label class="form-label">วันที่หนังสือ</label><input
+              class="form-control form-control-sm" value="15/07/2569"></div>
+          <div class="col-md-4 mb-2"><label class="form-label">โอนครั้งที่</label><input
+              class="form-control form-control-sm" value="อัตโนมัติ" readonly></div>
+          <div class="col-md-4 mb-2"><label class="form-label">วันที่โอน <span
+                class="text-danger">*</span></label><input class="form-control form-control-sm" value="20/07/2569">
+          </div>
+          <div class="col-md-4 mb-2"><label class="form-label">ภาค <span class="text-danger">*</span></label>
+            <select class="form-select form-select-sm">
+              <option>ส่วนกลาง</option>
+            </select>
+          </div>
+          <div class="col-md-4 mb-2"><label class="form-label">หน่วยงานที่โอน <span class="text-danger">*</span></label>
+            <select class="form-select form-select-sm">
+              <option>สบง.</option>
+              <option>สบอ.</option>
+            </select>
+          </div>
+          <div class="col-md-4 mb-2"><label class="form-label">จำนวนเงิน</label><input
+              class="form-control form-control-sm text-end" id="hdrTotal" value="0.00" readonly></div>
+          <div class="col-md-4 mb-2"><label class="form-label">สถานะ</label><input class="form-control form-control-sm"
+              value="ร่าง" readonly></div>
+        </div>
+
+        <!-- ══════════ TABS (อยู่ใน card-body เดียวกับ Header) ══════════ -->
+        <div id="tabsWrap" style="display:none">
+          <ul class="nav nav-tabs mt-4" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab"
+                data-bs-target="#tabTransfer">โอนจัดสรร</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab"
+                data-bs-target="#tabCenters">รายชื่อศูนย์ต้นทุนที่โอนจัดสรร <span class="badge-new">ใหม่</span></button>
+            </li>
+          </ul>
+
+          <div class="tab-content bg-white p-3 border border-top-0">
+            <!-- ───── TAB 1 ───── -->
+            <div class="tab-pane fade show active" id="tabTransfer">
+              <div class="d-flex justify-content-end gap-2 mb-3">
+                <button class="btn btn-primary btn-sm"><i class="fa fa-refresh"></i> อัพเดทงบประมาณ</button>
+                <button class="btn btn-info btn-sm text-white" data-bs-toggle="modal" data-bs-target="#modalRequest">
+                  <i class="fa fa-search"></i> เลือกรายการคำขอ
+                </button>
+                <button class="btn btn-danger btn-sm"><i class="fa fa-trash"></i> ลบรายการ</button>
+              </div>
+
+              <table class="table table-hover align-middle">
+                <thead class="table-primary">
+                  <tr class="text-center">
+                    <th style="width:34px" title="เลือกทั้งใบคำขอ (กลุ่ม) เพื่อลบ / เลือกแถวโอนออกทีละแถวเพื่อลบ — ลบแถวรับโอนเดี่ยวๆ ไม่ได้ (ตอบ Q-11)"></th>
+                    <th style="width:44px"></th>
+                    <th style="width:90px">ลำดับ</th>
+                    <th>ศูนย์ต้นทุน</th>
+                    <th>ผลผลิต</th>
+                    <th>กิจกรรม</th>
+                    <th>รายการงบประมาณ</th>
+                    <th>รหัสงบประมาณ</th>
+                    <th style="width:110px">ยอดคำขอ</th>
+                    <th style="width:150px">งบประมาณจัดสรร</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+              </table>
+
+              <div class="legend">
+                <b>โครงสร้าง:</b> กลุ่ม 1 = <b>เลขที่คำขอ</b> → กลุ่ม 2 = <b>แหล่งเงิน</b> → แถวแม่ = รายการ
+                <b>รับโอน</b> (จากคำขอ, ยอดคำขอ fix) → แถวลูก = รายการ <b>โอนออก</b> (งบประมาณจัดสรรแก้ไขได้)
+                &nbsp;|&nbsp; <b>การลบ (ตอบ Q-11):</b> ลบได้แค่ ① checkbox ที่แถวกลุ่ม<b>เลขที่คำขอ</b> = ลบทั้งคำขอ
+                (ทุกรายการ) หรือ ② checkbox ที่<b>แถวลูก</b> = ลบทีละรายการโอนออก — <b>ลบแถวรับโอนเดี่ยวๆ ไม่ได้</b>
+                เพราะการโอนต้องโอนทุกรายการของคำขอ
+              </div>
+            </div>
+
+            <!-- ───── TAB 2 ───── -->
+            <div class="tab-pane fade" id="tabCenters">
+              <table class="table table-hover align-middle">
+                <thead class="table-primary">
+                  <tr class="text-center">
+                    <th style="width:60px">ลำดับ</th>
+                    <th>หน่วยเบิกจ่าย</th>
+                    <th>ศูนย์ต้นทุน</th>
+                    <th style="width:130px">เงินรวม</th>
+                    <th>บัญชีผู้โอน</th>
+                    <th>บัญชีผู้รับโอน</th>
+                    <th>หมายเหตุ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="group-header">
+                    <td colspan="3">▾ แหล่งเงิน : เงินงบประมาณรายจ่ายประจำปี</td>
+                    <td class="text-end">100.00</td>
+                    <td colspan="3"></td>
+                  </tr>
+                  <tr class="group-header">
+                    <td colspan="3" style="padding-left:32px">▾ แผนงาน : การอำนวยความยุติธรรม รักษาผลประโยชน์ของรัฐ</td>
+                    <td class="text-end">100.00</td>
+                    <td colspan="3"></td>
+                  </tr>
+                  <tr class="group-header">
+                    <td colspan="3" style="padding-left:56px">▾ ประเภท : งบลงทุน</td>
+                    <td class="text-end">100.00</td>
+                    <td colspan="3"></td>
+                  </tr>
+                  <tr>
+                    <td class="text-center">1</td>
+                    <td class="cell-sm">29006 สำนักงานอัยการสูงสุด</td>
+                    <td class="cell-sm">สำนักงานเลขาธิการสำนักงานอัยการสูงสุด และหน่วยงานในสังกัด 13 หน่วยงาน</td>
+                    <td class="text-end">100.00</td>
+                    <td><select class="form-select form-select-sm">
+                        <option>เลือกบัญชีผู้โอน</option>
+                        <option selected>0123456789 — บัญชีงบประมาณกลาง</option>
+                      </select></td>
+                    <td><select class="form-select form-select-sm">
+                        <option>เลือกบัญชีผู้รับโอน</option>
+                        <option selected>9876543210 — สนง.เลขาธิการฯ</option>
+                      </select></td>
+                    <td><input class="form-control form-control-sm"></td>
+                  </tr>
+                </tbody>
+              </table>
+              <button class="btn btn-primary btn-sm">บันทึกบัญชี</button>
+              <div class="legend mt-2">แถวศูนย์ต้นทุน = <b>ศูนย์ต้นทุนของรายการรับโอน</b> (ตอบ Q-3) จัดกลุ่มตาม
+                แหล่งเงิน → แผนงาน → ประเภท &nbsp;|&nbsp; บัญชีผู้โอน/ผู้รับโอน บันทึก<b>ระดับศูนย์ต้นทุน</b> (ตอบ Q-4)
+                — ไม่ต้องผ่านหน้า CostCenter เหมือนโอนจัดสรรปกติ &nbsp;|&nbsp;
+                <b>บังคับเลือกบัญชีผู้โอน+ผู้รับโอนให้ครบทุกแถวก่อนกดปุ่ม "ยืนยัน" ที่ card-footer</b> (ตอบ Q-10)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer d-flex gap-2">
+        <button class="btn btn-primary btn-sm"><i class="fa fa-save"></i> บันทึก</button>
+        <button class="btn btn-warning btn-sm" id="btnConfirmHdr" style="display:none">ยืนยัน</button>
+        <button class="btn btn-secondary btn-sm">กลับหน้าหลัก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ MODAL 1: เลือกรายการคำขอ ══════════ -->
+  <div class="modal fade" id="modalRequest">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">เลือกรายการคำขอรับจัดสรรเพิ่มเติม</h5>
+          <button class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row mb-3 align-items-end">
+            <div class="col-md-4"><label class="form-label">เลขที่คำขอ <span class="badge-new">dropdown</span></label>
+              <select class="form-select form-select-sm">
+                <option>ทั้งหมด</option>
+                <option selected>100-1/2569</option>
+                <option>100-2/2569</option>
+              </select>
+            </div>
+            <div class="col-md-3"><label class="form-label">ปีงบประมาณ</label>
+              <select class="form-select form-select-sm">
+                <option selected>2569</option>
+                <option>2568</option>
+                <option>2567</option>
+              </select>
+            </div>
+            <div class="col-md-2"><button class="btn btn-primary btn-sm w-100"><i class="fa fa-search"></i>
+                ค้นหา</button></div>
+          </div>
+          <table class="table table-sm table-hover">
+            <thead class="table-primary">
+              <tr class="text-center">
+                <th style="width:44px">#</th>
+                <th>แหล่งเงิน</th>
+                <th>แผนงาน</th>
+                <th>ผลผลิต</th>
+                <th>กิจกรรม</th>
+                <th>รายการงบประมาณ</th>
+                <th>รหัสงบประมาณ</th>
+                <th class="text-end">ยอดคำขอ</th>
+              </tr>
+            </thead>
+            <tbody class="text-center cell-sm">
+              <tr>
+                <td>1</td>
+                <td>เงินงบประมาณรายจ่ายประจำปี</td>
+                <td>การอำนวยความยุติธรรม รักษาผลประโยชน์ของรัฐ</td>
+                <td>การอำนวยความยุติธรรมและคุ้มครองสิทธิประชาชน</td>
+                <td>งานอำนวยความยุติธรรม</td>
+                <td>งานจ้างออกแบบก่อสร้าง</td>
+                <td>29006630001004100000</td>
+                <td class="text-end">100.00</td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>เงินงบประมาณรายจ่ายประจำปี</td>
+                <td>การอำนวยความยุติธรรม รักษาผลประโยชน์ของรัฐ</td>
+                <td>การอำนวยความยุติธรรมและคุ้มครองสิทธิประชาชน</td>
+                <td>งานอำนวยความยุติธรรม</td>
+                <td>ค่าสาธารณูปโภค</td>
+                <td>29006630001004200000</td>
+                <td class="text-end">250.00</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="legend"><b>ไม่มี checkbox รายแถว</b> — บังคับเลือกทุกรายการของคำขอที่ค้นหา
+            (ดึงเฉพาะสถานะยืนยัน 20101 + IS_APPROVE = 1) &nbsp;|&nbsp;
+            ตัด column เลขที่คำขอ / หน่วยเบิกจ่าย / ศูนย์ต้นทุน ออก</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-success btn-sm" data-bs-dismiss="modal" onclick="setStage(1)">เลือกทั้งหมด</button>
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ MODAL 2: บัญชีรับโอน (เพิ่มรายการโอนออก — ฟอร์มเพิ่มใหม่ล้วน ไม่มีค้นหา/ไม่มีรายการ) ══════════ -->
+  <div class="modal fade" id="modalOut">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">บัญชีรับโอน — เพิ่มรายการโอนออก</h5>
+          <button class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-light border py-2 mb-3 cell-sm">
+            <b>รายการรับโอน:</b> <span id="mdlItemName">งานจ้างออกแบบก่อสร้าง</span> &nbsp;|&nbsp;
+            <b>รหัสงบประมาณ:</b> <span id="mdlItemCode">29006630001004100000</span> &nbsp;|&nbsp;
+            <b>ยอดคำขอ:</b> <span id="mdlItemAmt" class="fw-bold">100.00</span> บาท
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-4 mb-2"><label class="form-label">แหล่งเงิน <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fSrc">
+                <option value="">กรุณาเลือก</option>
+                <option value="100">เงินงบประมาณรายจ่ายประจำปี</option>
+                <option value="200">เงินกันไว้เบิกเหลื่อมปี</option>
+                <option value="400">เงินนอกงบประมาณ</option>
+              </select>
+            </div>
+            <div class="col-md-4 mb-2"><label class="form-label">หน่วยเบิกจ่าย <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fDept">
+                <option value="">กรุณาเลือก</option>
+                <option value="29006">29006 สำนักงานอัยการสูงสุด</option>
+              </select>
+            </div>
+            <div class="col-md-4 mb-2"><label class="form-label">ศูนย์ต้นทุน <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fCostCenter">
+                <option value="">กรุณาเลือก</option>
+                <option value="2906000100">สำนักงานอัยการภาค 1</option>
+                <option value="2906000200">สำนักงานอัยการภาค 2</option>
+              </select>
+            </div>
+            <div class="col-md-4 mb-2"><label class="form-label">แผนงาน <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fPlan" onchange="onPlanChange()">
+                <option value="">ระบุรายการ</option>
+                <option value="p1">การอำนวยความยุติธรรม รักษาผลประโยชน์ของรัฐ</option>
+                <option value="p2">พื้นฐานด้านการปรับสมดุล</option>
+              </select>
+            </div>
+            <div class="col-md-4 mb-2"><label class="form-label">ผลผลิต <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fProduct" disabled>
+                <option value="">-- กรุณาเลือกแผนงานก่อน --</option>
+              </select>
+            </div>
+            <div class="col-md-4 mb-2"><label class="form-label">กิจกรรม <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fActivity" disabled>
+                <option value="">-- กรุณาเลือกแผนงานก่อน --</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-2"><label class="form-label">รายการ <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fCategory">
+                <option value="">ระบุรายการ</option>
+                <option>งานจ้างออกแบบก่อสร้าง</option>
+                <option>ค่าสาธารณูปโภค</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-2"><label class="form-label">รหัสงบประมาณ <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" id="fCode">
+                <option value="">ระบุรายการ</option>
+                <option>29006630001004100000</option>
+                <option>29006630001004200000</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="text-center">
+            <button class="btn btn-success btn-sm" onclick="addNewOut()">
+              <i class="fa fa-plus"></i> เพิ่มรายการใหม่
+            </button>
+          </div>
+
+          <div class="legend mt-3">ฟอร์ม<b>เพิ่มรายการใหม่ทั้งหมด</b> — ไม่มีการค้นหา/เลือกจากรายการเดิม
+            &nbsp;|&nbsp; ทุกแหล่งเงินผู้ใช้เลือก หน่วยเบิกจ่าย/ศูนย์ต้นทุน เอง <b>ไม่ fix</b> (ตอบ Q-1)
+            &nbsp;|&nbsp; กด "เพิ่มรายการใหม่" ซ้ำได้หลายครั้ง — <b>1 รับโอน → N โอนออก ยืนยันแล้ว (ตอบ Q-6)</b>
+            รองรับเผื่อใช้เงินจากหลายแหล่ง และ<b>ไม่จำเป็นต้องรวมเท่ากับยอดคำขอ</b> (รองรับทยอยโอน — validate แค่ ≤ ยอดคำขอ)
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // ── ข้อมูลตัวอย่าง: 1 คำขอ → 1 แหล่งเงิน → 1 รายการรับโอน → 1 รายการโอนออก
+    const data = [{
+      requestNo: '100-1/2569',
+      sourceName: 'เงินงบประมาณรายจ่ายประจำปี',
+      items: [{
+        id: 1,
+        costcenter: 'สำนักงานเลขาธิการสำนักงานอัยการสูงสุด และหน่วยงานในสังกัด 13 หน่วยงาน',
+        product: 'การอำนวยความยุติธรรมและคุ้มครองสิทธิประชาชน',
+        activity: 'งานอำนวยความยุติธรรม',
+        category: 'งานจ้างออกแบบก่อสร้าง',
+        code: '29006630001004100000 : ค่าควบคุมงานก่อสร้างอาคารสำนักงานอัยการสูงสุด (จังหวัดสงขลา) พร้อมสิ่งก่อสร้างประกอบ ตำบลบ่อยาง อำเภอเมืองสงขลา จังหวัดสงขลา',
+        requestAmt: 100,
+        children: [{
+          costcenter: 'สำนักงานอัยการภาค 1',
+          product: 'การอำนวยความยุติธรรมและคุ้มครองสิทธิประชาชน',
+          activity: 'งานอำนวยความยุติธรรม',
+          category: 'งานจ้างออกแบบก่อสร้าง',
+          code: '29006630001004100000 : ค่าควบคุมงานก่อสร้างอาคารสำนักงานอัยการสูงสุด (จังหวัดสงขลา) พร้อมสิ่งก่อสร้างประกอบ ตำบลบ่อยาง อำเภอเมืองสงขลา จังหวัดสงขลา',
+          allocateAmt: 100
+        }]
+      }]
+    }];
+
+    const money = n => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let stage = 0;
+
+    function render() {
+      const showAccountBtn = stage >= 2;   // 🏛 แสดงหลังบันทึก
+      const showChildren = stage >= 2;   // แถวลูกแสดงหลังเลือกจาก modal บัญชีรับโอน
+      let html = '', grand = 0, no = 1;
+
+      data.forEach(req => {
+        const reqTotal = req.items.reduce((s, i) => s + i.requestAmt, 0);
+        const reqAlloc = showChildren
+          ? req.items.reduce((s, i) => s + i.children.reduce((t, c) => t + c.allocateAmt, 0), 0) : 0;
+        grand += reqAlloc;
+
+        // ── กลุ่ม 1: เลขที่คำขอ — checkbox ที่นี่ = เลือกลบ "ทั้งคำขอ" (ทุกรายการ) เท่านั้น (ตอบ Q-11) ──
+        html += `<tr class="grp-request">
+          <td class="text-center"><input type="checkbox" title="เลือกลบทั้งคำขอนี้ (ทุกรายการ)"></td>
+          <td colspan="7"><button class="btn btn-light btn-xs border">-</button> เลขที่คำขอ : ${req.requestNo}</td>
+          <td class="text-end">${money(reqTotal)}</td>
+          <td class="text-end">${money(reqAlloc)}</td></tr>`;
+
+        // ── กลุ่ม 2: แหล่งเงิน ──
+        html += `<tr class="grp-source">
+          <td class="text-center"><button class="btn btn-light btn-xs border">-</button></td>
+          <td colspan="7" style="padding-left:24px">แหล่งเงิน : ${req.sourceName}</td>
+          <td class="text-end">${money(reqTotal)}</td>
+          <td class="text-end">${money(reqAlloc)}</td></tr>`;
+
+        req.items.forEach(it => {
+          const alloc = showChildren ? it.children.reduce((t, c) => t + c.allocateAmt, 0) : 0;
+          const hasChild = showChildren && it.children.length > 0;
+
+          const accBtn = showAccountBtn
+            ? `<button class="btn btn-sm btn-primary btn-select-transfer-account" data-bs-toggle="modal"
+                        data-bs-target="#modalOut" onclick="openAddOut(${it.id}, '${it.category}', '${it.code.split(' : ')[0]}', ${it.requestAmt})"
+                        title="เลือกบัญชีรับโอน (เพิ่มรายการโอนออก)">
+                 <i class="fa fa-building-columns"></i></button>` : '';
+          const chevron = hasChild
+            ? `<button class="btn btn-light btn-xs border btn-toggle-children ms-2" onclick="tog(${it.id},this)"
+                       title="แสดง/ซ่อนรายการย่อย"><i class="fa fa-chevron-right"></i></button>` : '';
+
+          // ── แถวแม่ = รายการรับโอน — ไม่มี checkbox: ลบทีละรายการรับโอนไม่ได้ (ตอบ Q-11, ลบได้แค่ทั้งคำขอ หรือแถวลูกทีละแถว) ──
+          html += `<tr>
+            <td></td>
+            <td class="text-center">${accBtn}</td>
+            <td class="text-center">${no++} ${chevron}</td>
+            <td class="cell-sm">${it.costcenter}</td>
+            <td class="cell-sm">${it.product}</td>
+            <td class="cell-sm">${it.activity}</td>
+            <td class="cell-sm">${it.category}</td>
+            <td class="cell-sm text-center">${it.code}</td>
+            <td class="text-end">${money(it.requestAmt)}</td>
+            <td class="text-end">${alloc ? money(alloc) : '<span class="text-unspecified">ยังไม่ระบุ</span>'}</td>
+          </tr>`;
+
+          // ── แถวลูก = รายการโอนออก — ลบทีละแถวได้อิสระ (ตอบ Q-11) ──
+          if (hasChild) {
+            it.children.forEach(c => {
+              html += `<tr class="ref-child child-of-${it.id}" style="display:none">
+                <td class="text-center"><input type="checkbox" title="เลือกลบรายการโอนออกนี้"></td>
+                <td></td><td></td>
+                <td class="cell-sm">${c.costcenter}</td>
+                <td class="cell-sm">${c.product}</td>
+                <td class="cell-sm">${c.activity}</td>
+                <td class="cell-sm">${c.category}</td>
+                <td class="cell-sm text-center">${c.code}</td>
+                <td></td>
+                <td><input class="form-control form-control-sm text-end" value="${money(c.allocateAmt)}"></td>
+              </tr>`;
+            });
+          }
+        });
+      });
+
+      document.getElementById('tbody').innerHTML = html;
+      document.getElementById('hdrTotal').value = money(grand);
+    }
+
+    function tog(id, btn) {
+      const icon = btn.querySelector('i');
+      document.querySelectorAll('.child-of-' + id).forEach(r => {
+        const open = r.style.display !== 'none';
+        r.style.display = open ? 'none' : '';
+        icon.className = open ? 'fa fa-chevron-right' : 'fa fa-chevron-down';
+      });
+    }
+
+    // ── Modal บัญชีรับโอน: ฟอร์มเพิ่มรายการใหม่ล้วน (ไม่มีค้นหา/ไม่มีรายการ) ──
+    let currentItemId = null;
+    const planOptions = {
+      p1: {
+        products: [{ v: 'pr1', t: 'การอำนวยความยุติธรรมและคุ้มครองสิทธิประชาชน' }],
+        activities: [{ v: 'a1', t: 'งานอำนวยความยุติธรรม' }]
+      },
+      p2: {
+        products: [{ v: 'pr2', t: 'ผลผลิตที่ 1' }],
+        activities: [{ v: 'a2', t: 'กิจกรรมตรวจสอบ' }]
+      }
+    };
+
+    function openAddOut(itemId, categoryName, code, amt) {
+      currentItemId = itemId;
+      document.getElementById('mdlItemName').textContent = categoryName;
+      document.getElementById('mdlItemCode').textContent = code;
+      document.getElementById('mdlItemAmt').textContent = money(amt);
+      // reset ฟอร์ม
+      ['fSrc', 'fDept', 'fCostCenter', 'fPlan', 'fCategory', 'fCode'].forEach(id => document.getElementById(id).value = '');
+      const prod = document.getElementById('fProduct'), act = document.getElementById('fActivity');
+      prod.innerHTML = '<option value="">-- กรุณาเลือกแผนงานก่อน --</option>'; prod.disabled = true;
+      act.innerHTML = '<option value="">-- กรุณาเลือกแผนงานก่อน --</option>'; act.disabled = true;
+    }
+
+    function onPlanChange() {
+      const planVal = document.getElementById('fPlan').value;
+      const prod = document.getElementById('fProduct'), act = document.getElementById('fActivity');
+      if (!planVal || !planOptions[planVal]) {
+        prod.innerHTML = '<option value="">-- กรุณาเลือกแผนงานก่อน --</option>'; prod.disabled = true;
+        act.innerHTML = '<option value="">-- กรุณาเลือกแผนงานก่อน --</option>'; act.disabled = true;
+        return;
+      }
+      const opt = planOptions[planVal];
+      prod.innerHTML = '<option value="">ระบุรายการ</option>' + opt.products.map(o => `<option value="${o.v}">${o.t}</option>`).join('');
+      act.innerHTML = '<option value="">ระบุรายการ</option>' + opt.activities.map(o => `<option value="${o.v}">${o.t}</option>`).join('');
+      prod.disabled = false; act.disabled = false;
+    }
+
+    function addNewOut() {
+      const src = document.getElementById('fSrc');
+      const dept = document.getElementById('fDept');
+      const cc = document.getElementById('fCostCenter');
+      const plan = document.getElementById('fPlan');
+      const cat = document.getElementById('fCategory');
+      const code = document.getElementById('fCode');
+      if (!src.value || !dept.value || !cc.value || !plan.value || !cat.value || !code.value) {
+        alert('กรุณากรอกข้อมูลให้ครบทุกช่อง'); return;
+      }
+      const it = data[0].items.find(x => x.id === currentItemId);
+      if (!it) return;
+      it.children.push({
+        costcenter: cc.options[cc.selectedIndex].text,
+        product: document.getElementById('fProduct').options[document.getElementById('fProduct').selectedIndex]?.text || '',
+        activity: document.getElementById('fActivity').options[document.getElementById('fActivity').selectedIndex]?.text || '',
+        category: cat.value,
+        code: code.value,
+        allocateAmt: 0
+      });
+      stage = 2;
+      render();
+      // เคลียร์ฟอร์มพร้อมกรอกรายการถัดไป โดย modal ยังเปิดอยู่
+      ['fSrc', 'fDept', 'fCostCenter', 'fPlan', 'fCategory', 'fCode'].forEach(id => document.getElementById(id).value = '');
+      onPlanChange();
+    }
+
+    function setStage(s) {
+      stage = s;
+      document.getElementById('tabsWrap').style.display = s === 0 ? 'none' : '';
+      document.getElementById('btnConfirmHdr').style.display = s === 2 ? '' : 'none';
+      render();
+    }
+    setStage(0);
+  </script>
+</body>
+
+</html>
