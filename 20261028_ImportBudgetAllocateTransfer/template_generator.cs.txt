@@ -1,0 +1,693 @@
+using System.Data;
+using System.Text.RegularExpressions;
+using ClosedXML.Excel;
+using Oracle.ManagedDataAccess.Client;
+
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+// args: <output.xlsx> <budgetAllocateTransferId>   หรือ   <output.xlsx> verify
+// แบบฟอร์มผูกกับใบโอน 1 ใบที่สร้างเลขที่โอนแล้ว — ระบบจริงจะสร้างไฟล์นี้ตอนกด "ดาวน์โหลดแบบฟอร์ม" ในหน้าใบโอน
+var output = args[0];
+if (args[1] == "verify") { Verify(output); return; }
+int docId = int.Parse(args[1]);
+
+const string TemplateVersion = "ALLOCTRF-IMPORT-V1";
+const int FirstDataRow = 5;
+const int LastDataRow = 1004; // 1000 แถว
+const string FontName = "Tahoma";
+
+// ---------- คอลัมน์ชีต "รายการโอน" ----------
+// ช่องกรอก (เหลือง) อยู่ติดกันทางซ้าย, ช่องตรวจ (เทา) อยู่ทางขวา
+// B–I = ท่อน 4–11 ของรหัสบัญชี ต้องติดกันเพื่อคัดลอก 8 ช่องจากชีต "ข้อมูลบัญชี" มาวางทีเดียวได้
+const int ColSeq = 1, ColSeg1 = 2, ColDept = 10, ColCc = 11, ColAmt = 12, ColNote = 13;
+const int ColName = 14, ColDeptName = 15, ColCcName = 16, ColRegion = 17, ColSegName1 = 18; // R–Y ชื่อของแต่ละท่อน
+
+var yellow = XLColor.FromHtml("#FFF2CC");
+var grey = XLColor.FromHtml("#EDEDED");
+var headFill = XLColor.FromHtml("#1F4E78");
+
+// ---------- DB ----------
+var cfg = File.ReadAllLines(@"C:\Users\thiha\Documents\TFS\OAG Budget\OAGBudget.API\appsettings.Development.json")
+    .First(l => !l.TrimStart().StartsWith("//") && l.Contains("\"OAGDBContext\""));
+var cs = Regex.Match(cfg, @"""OAGDBContext""\s*:\s*""([^""]+)""").Groups[1].Value;
+using var con = new OracleConnection(cs);
+con.Open();
+
+DataTable Q(string sql)
+{
+    using var cmd = new OracleCommand(sql, con);
+    var dt = new DataTable();
+    using var r = cmd.ExecuteReader();
+    dt.Load(r);
+    return dt;
+}
+string S(object o) => o == null || o == DBNull.Value ? "" : o.ToString();
+
+// ใบโอนที่จะนำเข้า: ต้องมีเลขที่โอนแล้ว และยังเป็นร่าง
+var docs = Q($@"
+    SELECT T.ID, T.ROUNDNO, T.BUDGETYEAR, T.TRANSFERORGTYPE, T.REGIONID, R.NAME AS REGIONNAME,
+           T.BUDGETSOURCEID, S.NAME AS BUDGETSOURCENAME, T.TRANSFERDATE, T.BOOKNO, T.TRANSFERSTATUS
+    FROM   OAGWBG_BUDGETALLOCATETRANSFER T
+    LEFT JOIN OAGWBG_V_REGION R ON R.ID = T.REGIONID
+    LEFT JOIN OAGWBG_V_EXT_BUDGET_SOURCE_V S ON S.ID = T.BUDGETSOURCEID
+    WHERE  T.ID = {docId}");
+if (docs.Rows.Count != 1) throw new Exception($"ไม่พบใบโอน ID {docId}");
+var doc = docs.Rows[0];
+if (doc["ROUNDNO"] == DBNull.Value) throw new Exception("ใบโอนยังไม่มีเลขที่โอน");
+if (S(doc["TRANSFERSTATUS"]) != "80101") throw new Exception("ใบโอนไม่ใช่สถานะร่าง (80101)");
+int year = Convert.ToInt32(doc["BUDGETYEAR"]);
+string orgType = S(doc["TRANSFERORGTYPE"]);
+string regionId = S(doc["REGIONID"]);
+string roundNo = S(doc["ROUNDNO"]);
+string orgName = orgType == "1" ? "สบง." : orgType == "2" ? "สบอ." : "";
+
+// บัญชีที่โอนจัดสรรได้ของใบนี้ (เฉพาะรายการหลัก)
+var accounts = Q($@"
+    SELECT ACCOUNTCODE, CODE, CATEGORYNAME, BUDGETPLANNAME, PRODUCTNAME, ACTIVITYNAME, TEMPLATENAME
+    FROM   TABLE(OAGWBG.OAGWBG_FN_GETBUDGET_ALLOCATE_TRANSFER_CATEGORY({year},'{orgType}'))
+    WHERE  (REF IS NULL OR REF = 0) AND TRANSFERNO IS NULL
+    ORDER  BY ACCOUNTCODE");
+
+// ---------- master ของแต่ละท่อน: เอาทุกรหัสที่มีใน view ไม่กรอง ----------
+// cols: หัวคอลัมน์ในชีต ตามลำดับคอลัมน์ของ SQL — คอลัมน์ 1 = รหัส, 2 = ชื่อ
+var masters = new List<Master>
+{
+    new(4,  "แหล่งเงิน",      "แหล่งเงิน",      "OAGWBG_V_EXT_BUDGET_SOURCE_V",
+        "SELECT ID, NAME, STATUSNAME, SUMMARYFLAG FROM OAGWBG_V_EXT_BUDGET_SOURCE_V ORDER BY ID",
+        new[] { "รหัสแหล่งเงิน", "ชื่อแหล่งเงิน", "สถานะ", "บัญชีสรุป" }),
+    new(5,  "แผนงาน",        "แผนงาน",        "OAGWBG_V_EXT_OAGGL_BUDGET_PLAN_V",
+        "SELECT ID, NAME, STATUSNAME, SUMMARYFLAG FROM OAGWBG_V_EXT_OAGGL_BUDGET_PLAN_V ORDER BY ID",
+        new[] { "รหัสแผนงาน", "ชื่อแผนงาน", "สถานะ", "บัญชีสรุป" }),
+    new(6,  "ผลผลิต",        "ผลผลิต",        "OAGWBG_V_EXT_OAGGL_BUDGET_PRODUCT_V",
+        "SELECT ID, NAME, BUDGETPLANCODE_ID, BUDGETPLANCODE_NAME, STATUSNAME, SUMMARYFLAG FROM OAGWBG_V_EXT_OAGGL_BUDGET_PRODUCT_V ORDER BY ID, BUDGETPLANCODE_ID",
+        new[] { "รหัสผลผลิต", "ชื่อผลผลิต", "รหัสแผนงาน", "ชื่อแผนงาน", "สถานะ", "บัญชีสรุป" }),
+    new(7,  "กิจกรรม",        "กิจกรรม",        "OAGWBG_V_EXT_OAGGL_BUDGET_ACTIVITY_V",
+        "SELECT ACTIVITY_ID, ACTIVITY_NAME, PRODUCT_ID, PRODUCT_NAME, STATUS_NAME, SUMMARYFLAG FROM OAGWBG_V_EXT_OAGGL_BUDGET_ACTIVITY_V ORDER BY ACTIVITY_ID, PRODUCT_ID",
+        new[] { "รหัสกิจกรรม", "ชื่อกิจกรรม", "รหัสผลผลิต", "ชื่อผลผลิต", "สถานะ", "บัญชีสรุป" }),
+    new(8,  "ประเภทรายจ่าย",  "ประเภทรายจ่าย",  "OAGWBG_V_EXT_OAGGL_BUDGET_TYPE_V",
+        "SELECT ID, NAME, STATUSNAME, SUMMARYFLAG FROM OAGWBG_V_EXT_OAGGL_BUDGET_TYPE_V ORDER BY ID",
+        new[] { "รหัสประเภทรายจ่าย", "ชื่อประเภทรายจ่าย", "สถานะ", "บัญชีสรุป" }),
+    new(9,  "รหัสงบประมาณ",   "รหัสงบประมาณ",   "OAGWBG_V_EXT_OAGGL_BUDGET_CODE_V",
+        "SELECT ID, NAME, STATUSNAME, SUMMARYFLAG FROM OAGWBG_V_EXT_OAGGL_BUDGET_CODE_V ORDER BY ID",
+        new[] { "รหัสงบประมาณ", "ชื่อรหัสงบประมาณ", "สถานะ", "บัญชีสรุป" }),
+    new(10, "รหัสบัญชี",      "รหัสบัญชี",      "OAGWBG_V_EXT_OAGGL_ACCOUNT_V",
+        "SELECT ID, NAME, ACCOUNTTYPE, STATUSNAME, SUMMARYFLAG FROM OAGWBG_V_EXT_OAGGL_ACCOUNT_V ORDER BY ID",
+        new[] { "รหัสบัญชี", "ชื่อบัญชี", "ประเภทบัญชี", "สถานะ", "บัญชีสรุป" }),
+    // บัญชีย่อย: รหัสซ้ำข้ามบัญชีแม่ได้ (ชื่อต่างกัน 78 รหัส) จึงหาชื่อด้วยคู่ รหัสบัญชี.รหัสบัญชีย่อย
+    new(11, "รหัสบัญชีย่อย",  "รหัสบัญชีย่อย",  "OAGWBG_V_EXT_OAGGL_SUB_ACCOUNT_V",
+        "SELECT ID, NAME, ACCOUNTID, ACCOUNTNAME, STATUSNAME, SUMMARYFLAG FROM OAGWBG_V_EXT_OAGGL_SUB_ACCOUNT_V ORDER BY ACCOUNTID, ID",
+        new[] { "รหัสบัญชีย่อย", "ชื่อบัญชีย่อย", "รหัสบัญชีแม่", "ชื่อบัญชีแม่", "สถานะ", "บัญชีสรุป" }, PairWithAccount: true),
+};
+foreach (var m in masters) m.Data = Q(m.Sql);
+
+// หน่วยงาน / ศูนย์ต้นทุน: กติกาเดียวกับ dropdown หน้าจอ — STATUS Y, SUMMARYFLAG N, กรองตามภาคของใบ (99 = ทุกภาค)
+var departments = Q($@"
+    SELECT ID, NAME, REGIONID, REGIONNAME FROM OAGWBG_V_EXT_OAGGL_DEPARTMENT_V
+    WHERE  STATUS = 'Y' AND SUMMARYFLAG = 'N' AND ('{regionId}' = '99' OR REGIONID = '{regionId}')
+    ORDER  BY REGIONID, ID");
+var costCenters = Q($@"
+    SELECT C.ID, C.NAME, C.REGIONID, C.REGIONNAME, C.DEPARTMENTID, D.NAME AS DEPARTMENTNAME
+    FROM   OAGWBG_V_EXT_OAGGL_COST_CENTER_V C
+    JOIN   OAGWBG_V_EXT_OAGGL_DEPARTMENT_V D ON D.ID = C.DEPARTMENTID AND D.STATUS = 'Y' AND D.SUMMARYFLAG = 'N'
+    WHERE  C.STATUS = 'Y' AND C.SUMMARYFLAG = 'N' AND ('{regionId}' = '99' OR C.REGIONID = '{regionId}')
+    ORDER  BY C.REGIONID, C.DEPARTMENTID, C.ID");
+var banks = Q(@"
+    SELECT BANK_ACCOUNT_NUM, BANK_ACCOUNT_NAME, BANK_NAME, COSTCENTERID
+    FROM   OAGWBG_V_EXT_OAGCE_BANK_ACCOUNT_V ORDER BY COSTCENTERID, BANK_ACCOUNT_NUM");
+
+// ---------- ตรวจข้อมูลบัญชี ----------
+string[] SplitAcc(DataRow r) => S(r["ACCOUNTCODE"]).Split('.');
+string AccKey(DataRow r) { var p = SplitAcc(r); return string.Join(".", masters.Select(m => p[m.SegNo - 1])); }
+if (accounts.AsEnumerable().Any(r => SplitAcc(r).Length != 13)) throw new Exception("พบรหัสบัญชีที่ไม่ใช่ 13 ท่อน");
+int keyCount = accounts.AsEnumerable().Select(AccKey).Distinct().Count();
+if (keyCount != accounts.Rows.Count) throw new Exception($"ท่อน 4–11 ซ้ำกัน {accounts.Rows.Count - keyCount} บัญชี");
+var segLen = masters.Select(m => accounts.AsEnumerable().Select(r => SplitAcc(r)[m.SegNo - 1].Length).Distinct().ToList()).ToArray();
+
+// ชื่อท่อนจาก master (ใช้ใส่แถวตัวอย่าง)
+string MasterName(Master m, string[] p)
+{
+    var id = p[m.SegNo - 1];
+    var rows = m.Data.AsEnumerable().Where(r => S(r[0]) == id).ToList();
+    if (m.PairWithAccount) { var pr = rows.FirstOrDefault(r => S(r[2]) == p[9]); if (pr != null) return S(pr[1]); }
+    return rows.Count > 0 ? S(rows[0][1]) : "";
+}
+
+Console.WriteLine($"doc={docId} roundno={roundNo} year={year} org={orgType} region={regionId} accounts={accounts.Rows.Count} departments={departments.Rows.Count} costcenters={costCenters.Rows.Count} banks={banks.Rows.Count}");
+foreach (var m in masters)
+{
+    var ids = accounts.AsEnumerable().Select(r => SplitAcc(r)[m.SegNo - 1]).Where(x => x != "").Distinct().ToList();
+    var masterIds = m.Data.AsEnumerable().Select(r => S(r[0])).ToHashSet();
+    Console.WriteLine($"  seg{m.SegNo} {m.Header}: master={m.Data.Rows.Count} rows, used={ids.Count}, missing in master={ids.Count(x => !masterIds.Contains(x))}");
+}
+
+var exAcc = accounts.AsEnumerable().Where(r => SplitAcc(r)[3] == "100").Take(2).ToList();
+var exCc = costCenters.AsEnumerable().Take(2).ToList();
+
+// ---------- สร้างไฟล์ ----------
+using var wb = new XLWorkbook();
+wb.Style.Font.FontName = FontName;
+wb.Style.Font.FontSize = 10;
+
+void Header(IXLRange range)
+{
+    range.Style.Font.Bold = true;
+    range.Style.Font.FontColor = XLColor.White;
+    range.Style.Fill.BackgroundColor = headFill;
+    range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+    range.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+    range.Style.Alignment.WrapText = true;
+    range.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+    range.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+}
+void Title(IXLWorksheet ws, string title, string subtitle)
+{
+    ws.Cell(1, 1).Value = title;
+    ws.Cell(1, 1).Style.Font.Bold = true;
+    ws.Cell(1, 1).Style.Font.FontSize = 14;
+    ws.Cell(2, 1).Value = subtitle;
+    ws.Cell(2, 1).Style.Font.FontColor = XLColor.FromHtml("#595959");
+}
+void ProtectRef(IXLWorksheet ws) =>
+    ws.Protect().AllowElement(XLSheetProtectionElements.SelectEverything | XLSheetProtectionElements.AutoFilter | XLSheetProtectionElements.Sort);
+string L(int col) => XLHelper.GetColumnLetterFromNumber(col);
+
+var wsHelp = wb.AddWorksheet("คำอธิบาย");
+var wsHead = wb.AddWorksheet("ข้อมูลใบโอน");
+var wsItem = wb.AddWorksheet("รายการโอน");
+var wsBank = wb.AddWorksheet("บัญชีธนาคาร");
+var wsAcc = wb.AddWorksheet("ข้อมูลบัญชี");
+foreach (var m in masters) m.Sheet = wb.AddWorksheet(m.SheetName);
+var wsDept = wb.AddWorksheet("หน่วยงาน");
+var wsCc = wb.AddWorksheet("ศูนย์ต้นทุน");
+var wsBankRef = wb.AddWorksheet("ข้อมูลบัญชีธนาคาร");
+
+// ===== หัวคอลัมน์ชีตรายการโอน (ใช้กับแถวตัวอย่างในคำอธิบายด้วย) =====
+var itemHeaders = new List<string> { "ลำดับ" };
+itemHeaders.AddRange(masters.Select(m => m.Header + " *"));
+itemHeaders.AddRange(new[] { "รหัสหน่วยงาน *", "รหัสศูนย์ต้นทุน *", "จำนวนเงิน (บาท) *", "หมายเหตุ",
+                             "ชื่อรายการ (ตรวจชุดบัญชี)", "ชื่อหน่วยงาน", "ชื่อศูนย์ต้นทุน", "ภาค" });
+itemHeaders.AddRange(masters.Select(m => "ชื่อ" + m.Header));
+int lastCol = itemHeaders.Count;
+
+// ===== 1) คำอธิบาย =====
+Title(wsHelp, $"แบบฟอร์มนำเข้ารายการโอนจัดสรร — เลขที่โอน {roundNo}", "อ่านก่อนกรอก — ระบบตรวจทั้งไฟล์ ผิดแม้แต่แถวเดียว ไฟล์จะถูกตีกลับทั้งไฟล์");
+wsHelp.Cell(3, 1).Value = "เวอร์ชันแบบฟอร์ม";
+wsHelp.Cell(3, 2).Value = TemplateVersion;
+wsHelp.Cell(3, 2).Style.Font.Bold = true;
+wb.DefinedNames.Add("TEMPLATE_VERSION", wsHelp.Range("B3"));
+int hr = 5;
+wsHelp.Cell(hr, 1).Value = "สีของช่อง"; wsHelp.Cell(hr, 1).Style.Font.Bold = true; hr++;
+wsHelp.Cell(hr, 1).Value = "ช่องให้กรอก"; wsHelp.Cell(hr, 2).Style.Fill.BackgroundColor = yellow; wsHelp.Cell(hr, 2).Value = "สีเหลือง"; hr++;
+wsHelp.Cell(hr, 1).Value = "ระบบคำนวณ / อ้างอิง (ไม่ต้องแก้)"; wsHelp.Cell(hr, 2).Style.Fill.BackgroundColor = grey; wsHelp.Cell(hr, 2).Value = "สีเทา"; hr++;
+hr++;
+wsHelp.Cell(hr, 1).Value = "กติกา"; wsHelp.Cell(hr, 1).Style.Font.Bold = true; hr++;
+string[] rules =
+{
+    "นำเข้าได้เฉพาะใบโอนที่สร้างแล้ว (มีเลขที่โอน) และยังเป็นสถานะร่าง — สร้างใบโอนบนหน้าจอก่อน แล้วดาวน์โหลดแบบฟอร์มจากหน้าใบโอนนั้น",
+    "แบบฟอร์มนี้ผูกกับเลขที่โอนในชีต \"ข้อมูลใบโอน\" ใช้กับใบโอนนี้ใบเดียว อัปโหลดเข้าใบอื่นจะถูกตีกลับ",
+    "ใบโอนต้องยังไม่มีรายการ ถ้ามีรายการอยู่แล้วจะถูกตีกลับ",
+    "ห้ามเปลี่ยนชื่อชีต ลำดับคอลัมน์ หรือหัวตาราง ระบบอ่านตามตำแหน่ง และตรวจเวอร์ชันแบบฟอร์มที่ช่อง B3 ของชีตนี้",
+    "กรอกที่ชีต \"รายการโอน\" ช่องสีเหลือง B–M (1 แถว = 1 ชุดบัญชี × 1 หน่วยงาน/ศูนย์ต้นทุน) — คอลัมน์สีเทา N–Y คือผลตรวจ",
+    "ชุดบัญชี: กรอกแยกช่อง 8 ช่อง (B–I) ไม่ต้องกรอกรหัสบัญชีเต็ม ระบบประกอบให้เอง (หน่วยงาน/ศูนย์ต้นทุนผู้โอน/ปี และท่อนท้าย ระบบเติมจากใบโอน)",
+    "แต่ละท่อนต้องมีในชีต master ของท่อนนั้น (แหล่งเงิน แผนงาน ผลผลิต กิจกรรม ประเภทรายจ่าย รหัสงบประมาณ รหัสบัญชี รหัสบัญชีย่อย — ดึงทุกรหัสจาก view ต้นทาง) คอลัมน์ R–Y แสดงชื่อไว้ตรวจ",
+    "และ 8 ท่อนรวมกันต้องเป็นชุดที่มีในชีต \"ข้อมูลบัญชี\" (บัญชีที่โอนจัดสรรได้ของใบนี้) — ถ้าคอลัมน์ N ขึ้น \"ไม่พบชุดบัญชีนี้\" แปลว่าท่อนถูกทีละตัวแต่ไม่ใช่ชุดที่ใช้ได้",
+    "ชีต \"ข้อมูลบัญชี\" คอลัมน์ A–H เรียงลำดับเดียวกับ B–I คัดลอกทั้ง 8 ช่องของแถวที่ต้องการไปวางได้ทันที",
+    "ถ้าท่อนไหนในชีต \"ข้อมูลบัญชี\" ว่าง (เช่น แผนงานของบัญชีเงินรายได้สะสม แหล่งเงิน 200) ให้เว้นว่างเช่นกัน",
+    "ทุกช่องรหัสต้องเป็นข้อความ โดยเฉพาะรหัสงบประมาณ 20 หลัก — ถ้า Excel แปลงเป็นตัวเลข (เช่น 2.90061E+19) เลขจะเพี้ยนและไฟล์ถูกตีกลับ",
+    "รหัสหน่วยงาน: 10 หลักตามชีต \"หน่วยงาน\" ซึ่งแสดงเฉพาะภาคของใบโอน (ภาค 99 = ทุกภาค)",
+    "รหัสศูนย์ต้นทุน: 10 หลักตามชีต \"ศูนย์ต้นทุน\" และต้องสังกัดหน่วยงานที่กรอกในแถวเดียวกัน",
+    "ชุดบัญชี + หน่วยงาน + ศูนย์ต้นทุน เดียวกัน ห้ามมีซ้ำ 2 แถว",
+    "จำนวนเงินต้องมากกว่า 0 และทศนิยมไม่เกิน 2 ตำแหน่ง",
+    "ยอดรวมต่อบัญชีสรุปต้องไม่เกินงบคงเหลือ ณ วันที่นำเข้า",
+    "รองรับเฉพาะรายการหลัก ไม่รองรับรายการรับโอน (อ้างอิงใบโอนเดิม) และรายการเงินกัน — ให้เพิ่มบนหน้าจอ",
+    "ชีต \"บัญชีธนาคาร\" ไม่บังคับ ถ้าเว้นว่างให้เลือกบนหน้าจอก่อนจองงบประมาณ",
+    "นำเข้าสำเร็จ ใบโอนจะอยู่สถานะ \"ร่าง\" ต้องเปิดตรวจ และกดจองงบประมาณบนหน้าจอเอง",
+    "ถ้าไฟล์ถูกตีกลับ ระบบแจ้งทุกจุดที่ผิด (ชีต / แถว / คอลัมน์ / สาเหตุ) แก้ให้ครบแล้วอัปโหลดใหม่",
+};
+for (int i = 0; i < rules.Length; i++) { wsHelp.Cell(hr, 1).Value = $"{i + 1}."; wsHelp.Cell(hr, 2).Value = rules[i]; hr++; }
+hr++;
+wsHelp.Cell(hr, 1).Value = $"หมายเหตุ: ไฟล์นี้สร้างจากใบโอนตัวอย่างใน PREPROD (ID {docId} เลขที่โอน {roundNo}) — ตอนใช้งานจริงระบบสร้างไฟล์ใหม่ทุกครั้งที่กดดาวน์โหลดจากหน้าใบโอน";
+wsHelp.Cell(hr, 1).Style.Font.Italic = true; wsHelp.Cell(hr, 1).Style.Font.FontColor = XLColor.FromHtml("#C00000");
+hr += 2;
+wsHelp.Cell(hr, 1).Value = "ตัวอย่างการกรอกชีต \"รายการโอน\" (แถวตัวอย่างนี้ไม่ถูกนำเข้า)"; wsHelp.Cell(hr, 1).Style.Font.Bold = true; hr++;
+for (int c = 0; c < itemHeaders.Count; c++) wsHelp.Cell(hr, c + 1).Value = itemHeaders[c];
+Header(wsHelp.Range(hr, 1, hr, lastCol)); hr++;
+decimal[] exAmt = { 150000.00m, 87500.50m };
+for (int i = 0; i < Math.Min(exAcc.Count, exCc.Count); i++)
+{
+    var p = SplitAcc(exAcc[i]);
+    wsHelp.Cell(hr, ColSeq).Value = i + 1;
+    for (int s = 0; s < masters.Count; s++)
+    {
+        wsHelp.Cell(hr, ColSeg1 + s).Style.NumberFormat.Format = "@";
+        wsHelp.Cell(hr, ColSeg1 + s).Value = p[masters[s].SegNo - 1];
+        wsHelp.Cell(hr, ColSegName1 + s).Value = MasterName(masters[s], p);
+    }
+    foreach (var col in new[] { ColDept, ColCc }) wsHelp.Cell(hr, col).Style.NumberFormat.Format = "@";
+    wsHelp.Cell(hr, ColDept).Value = S(exCc[i]["DEPARTMENTID"]);
+    wsHelp.Cell(hr, ColCc).Value = S(exCc[i]["ID"]);
+    wsHelp.Cell(hr, ColAmt).Value = exAmt[i];
+    wsHelp.Cell(hr, ColAmt).Style.NumberFormat.Format = "#,##0.00";
+    wsHelp.Cell(hr, ColNote).Value = "ค่าเช่าบ้าน ไตรมาส 1";
+    wsHelp.Cell(hr, ColName).Value = S(exAcc[i]["CATEGORYNAME"]);
+    wsHelp.Cell(hr, ColDeptName).Value = S(exCc[i]["DEPARTMENTNAME"]);
+    wsHelp.Cell(hr, ColCcName).Value = S(exCc[i]["NAME"]);
+    wsHelp.Cell(hr, ColRegion).Value = S(exCc[i]["REGIONID"]);
+    wsHelp.Range(hr, 1, hr, lastCol).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+    wsHelp.Range(hr, 1, hr, lastCol).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+    hr++;
+}
+wsHelp.Column(1).Width = 30;
+for (int c = 2; c <= lastCol; c++) wsHelp.Column(c).Width = 14;
+wsHelp.Column(ColSeg1 + 5).Width = 24;
+foreach (var c in new[] { ColName, ColDeptName, ColCcName }) wsHelp.Column(c).Width = 34;
+for (int s = 0; s < masters.Count; s++) wsHelp.Column(ColSegName1 + s).Width = 28;
+wsHelp.Protect().AllowElement(XLSheetProtectionElements.SelectEverything);
+
+// ===== 2) ข้อมูลใบโอน (ระบบเติมให้ ห้ามแก้) =====
+Title(wsHead, "ข้อมูลใบโอนจัดสรร", "ระบบเติมให้ตอนดาวน์โหลดแบบฟอร์ม ห้ามแก้ — ใช้ตรวจว่าไฟล์นี้ตรงกับใบโอนที่จะนำเข้า");
+wsHead.Cell(4, 1).Value = "หัวข้อ"; wsHead.Cell(4, 2).Value = "ค่า";
+Header(wsHead.Range(4, 1, 4, 2));
+var docRows = new (string label, string value, string name)[]
+{
+    ("เลขที่โอน", roundNo, "TRANSFER_ROUNDNO"),
+    ("รหัสใบโอนในระบบ", docId.ToString(), "TRANSFER_ID"),
+    ("ปีงบประมาณ", year.ToString(), null),
+    ("หน่วยออกเลข", $"{orgType} - {orgName}", null),
+    ("ภาค", $"{regionId} - {S(doc["REGIONNAME"])}", null),
+    ("แหล่งเงิน", doc["BUDGETSOURCEID"] == DBNull.Value ? "-" : $"{S(doc["BUDGETSOURCEID"])} - {S(doc["BUDGETSOURCENAME"])}", null),
+    ("วันที่โอน", doc["TRANSFERDATE"] == DBNull.Value ? "-" : ((DateTime)doc["TRANSFERDATE"]).ToString("dd/MM/") + (((DateTime)doc["TRANSFERDATE"]).Year + 543), null),
+    ("เลขที่หนังสือ", doc["BOOKNO"] == DBNull.Value ? "-" : S(doc["BOOKNO"]), null),
+};
+for (int i = 0; i < docRows.Length; i++)
+{
+    int r = 5 + i;
+    wsHead.Cell(r, 1).Value = docRows[i].label;
+    wsHead.Cell(r, 2).Style.NumberFormat.Format = "@";
+    wsHead.Cell(r, 2).Value = docRows[i].value;
+    wsHead.Cell(r, 2).Style.Fill.BackgroundColor = grey;
+    if (docRows[i].name != null) wb.DefinedNames.Add(docRows[i].name, wsHead.Range(r, 2, r, 2));
+}
+wsHead.Cell(5, 2).Style.Font.Bold = true;
+wsHead.Cell(5, 2).Style.Font.FontSize = 12;
+int docLast = 4 + docRows.Length;
+wsHead.Range(5, 1, docLast, 2).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+wsHead.Range(5, 1, docLast, 2).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+var itemAmt = $"'รายการโอน'!${L(ColAmt)}${FirstDataRow}:${L(ColAmt)}${LastDataRow}";
+int sumRow = docLast + 2;
+wsHead.Cell(sumRow, 1).Value = "จำนวนแถวรายการ";
+wsHead.Cell(sumRow, 2).FormulaA1 = $"COUNT({itemAmt})";
+wsHead.Cell(sumRow + 1, 1).Value = "ยอดรวมจำนวนเงิน (บาท)";
+wsHead.Cell(sumRow + 1, 2).FormulaA1 = $"SUM({itemAmt})";
+wsHead.Cell(sumRow + 1, 2).Style.NumberFormat.Format = "#,##0.00";
+wsHead.Range(sumRow, 2, sumRow + 1, 2).Style.Fill.BackgroundColor = grey;
+wsHead.Range(sumRow, 1, sumRow + 1, 2).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+wsHead.Range(sumRow, 1, sumRow + 1, 2).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+wsHead.Cell(sumRow + 2, 1).Value = "คำนวณจากชีต \"รายการโอน\" ไว้ตรวจทานก่อนอัปโหลด — ระบบคำนวณยอดใหม่เองตอนนำเข้า";
+wsHead.Cell(sumRow + 2, 1).Style.Font.FontColor = XLColor.FromHtml("#595959");
+wsHead.Column(1).Width = 26; wsHead.Column(2).Width = 60;
+wsHead.Protect().AllowElement(XLSheetProtectionElements.SelectEverything);
+
+// ===== 5) ข้อมูลบัญชี =====
+Title(wsAcc, $"ข้อมูลบัญชีงบประมาณที่โอนจัดสรรได้ — ปี {year} {orgName}", "คัดลอกคอลัมน์ A–H (8 ช่อง) ไปวางในชีต \"รายการโอน\" คอลัมน์ B–I — ลำดับเดียวกัน");
+var accHeaders = masters.Select(m => m.Header).ToList();
+accHeaders.AddRange(new[] { "ชื่อรายการ", "รหัสรายการ", "ชื่อแผนงาน", "ชื่อผลผลิต", "ชื่อกิจกรรม", "บัญชีสรุป", "คีย์ (ระบบใช้)" });
+const int AccColName = 9, AccColKey = 15;
+for (int c = 0; c < accHeaders.Count; c++) wsAcc.Cell(4, c + 1).Value = accHeaders[c];
+Header(wsAcc.Range(4, 1, 4, accHeaders.Count));
+{
+    int r = FirstDataRow;
+    foreach (DataRow a in accounts.Rows)
+    {
+        var p = SplitAcc(a);
+        for (int s = 0; s < masters.Count; s++)
+        {
+            wsAcc.Cell(r, s + 1).Style.NumberFormat.Format = "@";
+            wsAcc.Cell(r, s + 1).Value = p[masters[s].SegNo - 1];
+        }
+        wsAcc.Cell(r, 9).Value = S(a["CATEGORYNAME"]);
+        wsAcc.Cell(r, 10).Value = S(a["CODE"]);
+        wsAcc.Cell(r, 11).Value = S(a["BUDGETPLANNAME"]);
+        wsAcc.Cell(r, 12).Value = S(a["PRODUCTNAME"]);
+        wsAcc.Cell(r, 13).Value = S(a["ACTIVITYNAME"]);
+        wsAcc.Cell(r, 14).Value = S(a["TEMPLATENAME"]);
+        wsAcc.Cell(r, AccColKey).Style.NumberFormat.Format = "@";
+        wsAcc.Cell(r, AccColKey).Value = AccKey(a);
+        r++;
+    }
+}
+for (int c = 1; c <= 8; c++) wsAcc.Column(c).Width = 12;
+wsAcc.Column(6).Width = 24; wsAcc.Column(9).Width = 45; wsAcc.Column(10).Width = 27;
+for (int c = 11; c <= 14; c++) wsAcc.Column(c).Width = 30;
+wsAcc.Column(AccColKey).Hide();
+wsAcc.SheetView.FreezeRows(4);
+wsAcc.Range(4, 1, 4, accHeaders.Count - 1).SetAutoFilter();
+ProtectRef(wsAcc);
+int accLast = FirstDataRow + accounts.Rows.Count - 1;
+
+// ===== master ของแต่ละท่อน =====
+// คอลัมน์ที่ระบบใช้ (ซ่อน): คีย์คู่ (บัญชีย่อย) และรายการรหัสไม่ซ้ำสำหรับ dropdown
+const int MaxDropdown = 500;
+foreach (var m in masters)
+{
+    var ws = m.Sheet;
+    Title(ws, m.Header, $"รหัสท่อนที่ {m.SegNo} ของชุดบัญชี — ทุกรหัสที่มีใน view  (ที่มา: {m.View})");
+    for (int c = 0; c < m.Cols.Length; c++) ws.Cell(4, c + 1).Value = m.Cols[c];
+    Header(ws.Range(4, 1, 4, m.Cols.Length));
+    int r = FirstDataRow;
+    foreach (DataRow d in m.Data.Rows)
+    {
+        for (int c = 0; c < m.Cols.Length; c++)
+        {
+            ws.Cell(r, c + 1).Style.NumberFormat.Format = "@";
+            ws.Cell(r, c + 1).Value = S(d[c]);
+        }
+        r++;
+    }
+    m.Last = r - 1;
+    int helper = m.Cols.Length + 2;
+    if (m.PairWithAccount)
+    {
+        m.PairCol = helper++;
+        ws.Cell(4, m.PairCol).Value = "คีย์คู่ (ระบบใช้)";
+        r = FirstDataRow;
+        foreach (DataRow d in m.Data.Rows) { ws.Cell(r, m.PairCol).Style.NumberFormat.Format = "@"; ws.Cell(r, m.PairCol).Value = $"{S(d[2])}.{S(d[0])}"; r++; }
+        ws.Column(m.PairCol).Hide();
+    }
+    var distinctIds = m.Data.AsEnumerable().Select(d => S(d[0])).Distinct().ToList();
+    if (distinctIds.Count <= MaxDropdown)
+    {
+        m.ListCol = helper;
+        ws.Cell(4, m.ListCol).Value = "รายการ dropdown (ระบบใช้)";
+        r = FirstDataRow;
+        foreach (var id in distinctIds) { ws.Cell(r, m.ListCol).Style.NumberFormat.Format = "@"; ws.Cell(r, m.ListCol).Value = id; r++; }
+        m.ListLast = r - 1;
+        ws.Column(m.ListCol).Hide();
+    }
+    ws.Column(1).Width = m.SegNo == 9 ? 24 : 16;
+    ws.Column(2).Width = 60;
+    for (int c = 3; c <= m.Cols.Length; c++) ws.Column(c).Width = m.Cols[c - 1].StartsWith("ชื่อ") ? 45 : 14;
+    ws.SheetView.FreezeRows(4);
+    ws.Range(4, 1, 4, m.Cols.Length).SetAutoFilter();
+    ProtectRef(ws);
+}
+// หมายเหตุท่อนว่าง (แผนงาน)
+{
+    var planM = masters.Single(x => x.SegNo == 5);
+    int blank = accounts.AsEnumerable().Count(x => SplitAcc(x)[4] == "");
+    if (blank > 0)
+    {
+        planM.Sheet.Cell(planM.Last + 2, 1).Value = $"หมายเหตุ: มี {blank} บัญชีที่ไม่มีแผนงาน (ท่อน 5 ว่าง) ให้เว้นช่องแผนงานว่างตามชีต \"ข้อมูลบัญชี\"";
+        planM.Sheet.Cell(planM.Last + 2, 1).Style.Font.FontColor = XLColor.FromHtml("#C00000");
+    }
+}
+
+// ===== หน่วยงาน =====
+Title(wsDept, regionId == "99" ? "หน่วยงานที่ใช้งาน — ทุกภาค" : $"หน่วยงานที่ใช้งาน — ภาค {regionId}", "คัดลอกคอลัมน์ A ไปวางในชีต \"รายการโอน\" คอลัมน์ J  (ที่มา: OAGWBG_V_EXT_OAGGL_DEPARTMENT_V)");
+string[] deptHeaders = { "รหัสหน่วยงาน", "ชื่อหน่วยงาน", "ภาค", "ชื่อภาค", "จำนวนศูนย์ต้นทุน" };
+for (int c = 0; c < deptHeaders.Length; c++) wsDept.Cell(4, c + 1).Value = deptHeaders[c];
+Header(wsDept.Range(4, 1, 4, deptHeaders.Length));
+{
+    var ccPerDept = costCenters.AsEnumerable().GroupBy(r => S(r["DEPARTMENTID"])).ToDictionary(g => g.Key, g => g.Count());
+    int r = FirstDataRow;
+    foreach (DataRow a in departments.Rows)
+    {
+        for (int c = 0; c < 4; c++) wsDept.Cell(r, c + 1).Style.NumberFormat.Format = "@";
+        wsDept.Cell(r, 1).Value = S(a["ID"]);
+        wsDept.Cell(r, 2).Value = S(a["NAME"]);
+        wsDept.Cell(r, 3).Value = S(a["REGIONID"]);
+        wsDept.Cell(r, 4).Value = S(a["REGIONNAME"]);
+        wsDept.Cell(r, 5).Value = ccPerDept.TryGetValue(S(a["ID"]), out var n) ? n : 0;
+        r++;
+    }
+}
+wsDept.Column(1).Width = 16; wsDept.Column(2).Width = 60; wsDept.Column(3).Width = 8; wsDept.Column(4).Width = 14; wsDept.Column(5).Width = 18;
+wsDept.SheetView.FreezeRows(4);
+wsDept.Range(4, 1, 4, deptHeaders.Length).SetAutoFilter();
+ProtectRef(wsDept);
+int deptLast = FirstDataRow + departments.Rows.Count - 1;
+
+// ===== ศูนย์ต้นทุน =====
+Title(wsCc, "ศูนย์ต้นทุนที่ใช้งาน", "คัดลอกคอลัมน์ A ไปวางในชีต \"รายการโอน\" คอลัมน์ K — คอลัมน์ E คือหน่วยงานที่สังกัด");
+string[] ccHeaders = { "รหัสศูนย์ต้นทุน", "ชื่อศูนย์ต้นทุน", "ภาค", "ชื่อภาค", "รหัสหน่วยงาน", "ชื่อหน่วยงาน" };
+for (int c = 0; c < ccHeaders.Length; c++) wsCc.Cell(4, c + 1).Value = ccHeaders[c];
+Header(wsCc.Range(4, 1, 4, ccHeaders.Length));
+{
+    int r = FirstDataRow;
+    foreach (DataRow a in costCenters.Rows)
+    {
+        for (int c = 0; c < 6; c++) wsCc.Cell(r, c + 1).Style.NumberFormat.Format = "@";
+        wsCc.Cell(r, 1).Value = S(a["ID"]);
+        wsCc.Cell(r, 2).Value = S(a["NAME"]);
+        wsCc.Cell(r, 3).Value = S(a["REGIONID"]);
+        wsCc.Cell(r, 4).Value = S(a["REGIONNAME"]);
+        wsCc.Cell(r, 5).Value = S(a["DEPARTMENTID"]);
+        wsCc.Cell(r, 6).Value = S(a["DEPARTMENTNAME"]);
+        r++;
+    }
+}
+wsCc.Column(1).Width = 16; wsCc.Column(2).Width = 60; wsCc.Column(3).Width = 8; wsCc.Column(4).Width = 14;
+wsCc.Column(5).Width = 16; wsCc.Column(6).Width = 50;
+wsCc.SheetView.FreezeRows(4);
+wsCc.Range(4, 1, 4, ccHeaders.Length).SetAutoFilter();
+ProtectRef(wsCc);
+int ccLast = FirstDataRow + costCenters.Rows.Count - 1;
+
+// ===== ข้อมูลบัญชีธนาคาร =====
+Title(wsBankRef, "บัญชีธนาคาร", "คัดลอกเลขที่บัญชีไปวางในชีต \"บัญชีธนาคาร\"");
+string[] bkHeaders = { "เลขที่บัญชี", "ชื่อบัญชี", "ธนาคาร", "รหัสศูนย์ต้นทุนเจ้าของบัญชี" };
+for (int c = 0; c < bkHeaders.Length; c++) wsBankRef.Cell(4, c + 1).Value = bkHeaders[c];
+Header(wsBankRef.Range(4, 1, 4, bkHeaders.Length));
+{
+    int r = FirstDataRow;
+    foreach (DataRow a in banks.Rows)
+    {
+        for (int c = 0; c < 4; c++) { wsBankRef.Cell(r, c + 1).Style.NumberFormat.Format = "@"; wsBankRef.Cell(r, c + 1).Value = S(a[c]); }
+        r++;
+    }
+}
+wsBankRef.Column(1).Width = 18; wsBankRef.Column(2).Width = 60; wsBankRef.Column(3).Width = 30; wsBankRef.Column(4).Width = 24;
+wsBankRef.SheetView.FreezeRows(4);
+wsBankRef.Range(4, 1, 4, bkHeaders.Length).SetAutoFilter();
+ProtectRef(wsBankRef);
+int bkLast = FirstDataRow + banks.Rows.Count - 1;
+
+// ===== 3) รายการโอน =====
+Title(wsItem, "รายการโอนจัดสรร", "1 แถว = 1 ชุดบัญชี × 1 หน่วยงาน/ศูนย์ต้นทุน  (* = บังคับ)  — กรอกช่องสีเหลือง B–M ได้สูงสุด 1,000 แถว  — ช่องสีเทาคือผลตรวจ");
+void Band(int c1, int c2, string text) { wsItem.Cell(3, c1).Value = text; wsItem.Range(3, c1, 3, c2).Merge(); Header(wsItem.Range(3, c1, 3, c2)); }
+Band(ColSeg1, ColSeg1 + masters.Count - 1, "ชุดบัญชี (กรอกแยกช่อง ระบบประกอบเป็นรหัสบัญชีเต็มเอง)");
+Band(ColDept, ColNote, "ผู้รับจัดสรร / จำนวนเงิน");
+Band(ColName, ColRegion, "ผลตรวจ");
+Band(ColSegName1, ColSegName1 + masters.Count - 1, "ชื่อของแต่ละท่อน (ตรวจกับ master)");
+for (int c = 0; c < itemHeaders.Count; c++) wsItem.Cell(4, c + 1).Value = itemHeaders[c];
+Header(wsItem.Range(4, 1, 4, lastCol));
+wsItem.Row(4).Height = 30;
+
+var accKey = $"'ข้อมูลบัญชี'!${L(AccColKey)}${FirstDataRow}:${L(AccColKey)}${accLast}";
+var accName = $"'ข้อมูลบัญชี'!${L(AccColName)}${FirstDataRow}:${L(AccColName)}${accLast}";
+var ccKey = $"'ศูนย์ต้นทุน'!$A${FirstDataRow}:$A${ccLast}";
+var ccName = $"'ศูนย์ต้นทุน'!$B${FirstDataRow}:$B${ccLast}";
+var ccRegion = $"'ศูนย์ต้นทุน'!$C${FirstDataRow}:$C${ccLast}";
+var ccDept = $"'ศูนย์ต้นทุน'!$E${FirstDataRow}:$E${ccLast}";
+var deptKey = $"'หน่วยงาน'!$A${FirstDataRow}:$A${deptLast}";
+var deptName = $"'หน่วยงาน'!$B${FirstDataRow}:$B${deptLast}";
+string Rng(Master m, int col) => $"'{m.SheetName}'!${L(col)}${FirstDataRow}:${L(col)}${m.Last}";
+int accountSegIdx = masters.FindIndex(x => x.SegNo == 10);
+string segFirst = L(ColSeg1), segLast = L(ColSeg1 + masters.Count - 1);
+
+// ข้อความ error ทุกตัวขึ้นต้นด้วย "ไม่" เพื่อให้ conditional format ทาสีแดงได้กฎเดียว
+for (int r = FirstDataRow; r <= LastDataRow; r++)
+{
+    var key = string.Join("&\".\"&", Enumerable.Range(0, masters.Count).Select(s => $"{L(ColSeg1 + s)}{r}"));
+    var segsBlank = $"COUNTA({segFirst}{r}:{segLast}{r})=0";
+    string d = $"{L(ColDept)}{r}", c = $"{L(ColCc)}{r}";
+    var ccMatch = $"MATCH({c}&\"\",{ccKey},0)";
+    wsItem.Cell(r, ColSeq).FormulaA1 = $"IF(AND({segsBlank},{d}=\"\",{c}=\"\",{L(ColAmt)}{r}=\"\"),\"\",ROW()-{FirstDataRow - 1})";
+    wsItem.Cell(r, ColName).FormulaA1 = $"IF({segsBlank},\"\",IFERROR(INDEX({accName},MATCH({key},{accKey},0))&\"\",\"ไม่พบชุดบัญชีนี้ในใบโอนนี้\"))";
+    wsItem.Cell(r, ColDeptName).FormulaA1 = $"IF({d}=\"\",\"\",IFERROR(INDEX({deptName},MATCH({d}&\"\",{deptKey},0))&\"\",\"ไม่พบรหัสหน่วยงานนี้\"))";
+    wsItem.Cell(r, ColCcName).FormulaA1 =
+        $"IF({c}=\"\",\"\",IFERROR(IF(INDEX({ccDept},{ccMatch})&\"\"<>{d}&\"\",\"ไม่อยู่ในหน่วยงานที่ระบุ\",INDEX({ccName},{ccMatch})&\"\"),\"ไม่พบรหัสศูนย์ต้นทุนนี้\"))";
+    wsItem.Cell(r, ColRegion).FormulaA1 = $"IF({c}=\"\",\"\",IFERROR(INDEX({ccRegion},{ccMatch})&\"\",\"\"))";
+
+    for (int s = 0; s < masters.Count; s++)
+    {
+        var m = masters[s];
+        string seg = $"{L(ColSeg1 + s)}{r}";
+        string notFound = $"\"ไม่พบใน {m.View.Replace("OAGWBG_V_EXT_", "")}\"";
+        string byId = $"INDEX({Rng(m, 2)},MATCH({seg}&\"\",{Rng(m, 1)},0))&\"\"";
+        string lookup;
+        if (m.PairWithAccount)
+        {
+            // หาด้วยคู่ บัญชี.บัญชีย่อย ก่อน — ไม่เจอค่อยหาด้วยรหัสบัญชีย่อยอย่างเดียว และบอกว่าผังอยู่ใต้บัญชีอื่น
+            string acc = $"{L(ColSeg1 + accountSegIdx)}{r}";
+            string byPair = $"INDEX({Rng(m, 2)},MATCH({acc}&\".\"&{seg},{Rng(m, m.PairCol)},0))&\"\"";
+            lookup = $"IFERROR({byPair},IFERROR({byId}&\" (ใน master อยู่ใต้บัญชีอื่น)\",{notFound}))";
+        }
+        else lookup = $"IFERROR(IF({byId}=\"\",\"(ไม่มีชื่อใน master)\",{byId}),{notFound})";
+        wsItem.Cell(r, ColSegName1 + s).FormulaA1 = $"IF({seg}=\"\",IF({segsBlank},\"\",\"-\"),{lookup})";
+    }
+}
+
+// ช่องกรอก
+var inputCols = Enumerable.Range(ColSeg1, masters.Count).Concat(new[] { ColDept, ColCc, ColAmt, ColNote });
+foreach (var col in inputCols)
+{
+    var rg = wsItem.Range(FirstDataRow, col, LastDataRow, col);
+    rg.Style.Fill.BackgroundColor = yellow;
+    rg.Style.Protection.Locked = false;
+    rg.Style.NumberFormat.Format = col == ColAmt ? "#,##0.00" : "@";
+}
+// validation ท่อน: dropdown จาก master ถ้ารหัสไม่เกิน 500 ตัว ไม่งั้นบังคับจำนวนหลัก (1 ช่องตั้งได้ validation เดียว)
+for (int s = 0; s < masters.Count; s++)
+{
+    var m = masters[s];
+    var rg = wsItem.Range(FirstDataRow, ColSeg1 + s, LastDataRow, ColSeg1 + s);
+    var dv = rg.CreateDataValidation();
+    if (m.ListCol > 0)
+    {
+        dv.List($"'{m.SheetName}'!${L(m.ListCol)}${FirstDataRow}:${L(m.ListCol)}${m.ListLast}", true);
+        dv.IgnoreBlanks = true;
+        dv.ErrorTitle = $"{m.Header} ไม่ถูกต้อง"; dv.ErrorMessage = $"เลือกจากรายการในชีต \"{m.SheetName}\"";
+    }
+    else if (segLen[s].Count == 1)
+    {
+        dv.TextLength.EqualTo(segLen[s][0]);
+        dv.ErrorTitle = $"{m.Header} ไม่ถูกต้อง"; dv.ErrorMessage = $"ต้องมี {segLen[s][0]} หลัก";
+    }
+}
+{
+    var dvD = wsItem.Range(FirstDataRow, ColDept, LastDataRow, ColDept).CreateDataValidation();
+    dvD.TextLength.EqualTo(10); dvD.ErrorTitle = "รหัสหน่วยงานไม่ถูกต้อง"; dvD.ErrorMessage = "ต้องมี 10 หลัก";
+    var dvC = wsItem.Range(FirstDataRow, ColCc, LastDataRow, ColCc).CreateDataValidation();
+    dvC.TextLength.EqualTo(10); dvC.ErrorTitle = "รหัสศูนย์ต้นทุนไม่ถูกต้อง"; dvC.ErrorMessage = "ต้องมี 10 หลัก";
+    var dvA = wsItem.Range(FirstDataRow, ColAmt, LastDataRow, ColAmt).CreateDataValidation();
+    dvA.Decimal.GreaterThan(0); dvA.ErrorTitle = "จำนวนเงินไม่ถูกต้อง"; dvA.ErrorMessage = "ต้องมากกว่า 0";
+    var dvN = wsItem.Range(FirstDataRow, ColNote, LastDataRow, ColNote).CreateDataValidation();
+    dvN.TextLength.EqualOrLessThan(2000); dvN.ErrorTitle = "หมายเหตุยาวเกิน"; dvN.ErrorMessage = "ไม่เกิน 2,000 ตัวอักษร";
+}
+// ช่องตรวจ
+var checkCols = new[] { ColSeq, ColName, ColDeptName, ColCcName, ColRegion }.Concat(Enumerable.Range(ColSegName1, masters.Count)).ToList();
+foreach (var col in checkCols) wsItem.Range(FirstDataRow, col, LastDataRow, col).Style.Fill.BackgroundColor = grey;
+foreach (var col in checkCols.Where(x => x != ColSeq && x != ColRegion))
+    wsItem.Range(FirstDataRow, col, LastDataRow, col).AddConditionalFormat().WhenStartsWith("ไม่").Font.SetFontColor(XLColor.Red).Font.SetBold();
+foreach (var col in Enumerable.Range(ColSegName1, masters.Count))
+    wsItem.Range(FirstDataRow, col, LastDataRow, col).AddConditionalFormat().WhenContains("อยู่ใต้บัญชีอื่น").Font.SetFontColor(XLColor.FromHtml("#C65911"));
+var items = wsItem.Range(FirstDataRow, 1, LastDataRow, lastCol);
+items.Style.Border.InsideBorder = XLBorderStyleValues.Hair;
+items.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+wsItem.Column(ColSeq).Width = 7;
+for (int s = 0; s < masters.Count; s++) wsItem.Column(ColSeg1 + s).Width = 12;
+wsItem.Column(ColSeg1 + masters.FindIndex(x => x.SegNo == 9)).Width = 24;
+wsItem.Column(ColDept).Width = 14; wsItem.Column(ColCc).Width = 14; wsItem.Column(ColAmt).Width = 16; wsItem.Column(ColNote).Width = 30;
+wsItem.Column(ColName).Width = 40; wsItem.Column(ColDeptName).Width = 34; wsItem.Column(ColCcName).Width = 38; wsItem.Column(ColRegion).Width = 7;
+for (int s = 0; s < masters.Count; s++) wsItem.Column(ColSegName1 + s).Width = 30;
+wsItem.SheetView.Freeze(4, 1);
+wsItem.Protect().AllowElement(XLSheetProtectionElements.SelectEverything);
+
+// ===== 4) บัญชีธนาคาร (ไม่บังคับ) =====
+Title(wsBank, "บัญชีธนาคารของศูนย์ต้นทุน (ไม่บังคับ)", "ใช้กับทุกประเภทรายจ่ายของศูนย์ต้นทุนนั้นในใบโอนนี้ — เว้นว่างได้ แล้วเลือกบนหน้าจอก่อนจองงบประมาณ");
+string[] bankHeaders = { "รหัสศูนย์ต้นทุน *", "ชื่อศูนย์ต้นทุน", "เลขที่บัญชีผู้โอน *", "เลขที่บัญชีผู้รับ *", "ตรวจเลขบัญชี" };
+for (int c = 0; c < bankHeaders.Length; c++) wsBank.Cell(4, c + 1).Value = bankHeaders[c];
+Header(wsBank.Range(4, 1, 4, bankHeaders.Length));
+var bkKey = $"'ข้อมูลบัญชีธนาคาร'!$A${FirstDataRow}:$A${bkLast}";
+const int BankLast = FirstDataRow + 399; // 400 แถว
+for (int r = FirstDataRow; r <= BankLast; r++)
+{
+    wsBank.Cell(r, 2).FormulaA1 = $"IF(A{r}=\"\",\"\",IFERROR(INDEX({ccName},MATCH(A{r}&\"\",{ccKey},0))&\"\",\"ไม่พบรหัสศูนย์ต้นทุนนี้\"))";
+    wsBank.Cell(r, 5).FormulaA1 =
+        $"IF(AND(C{r}=\"\",D{r}=\"\"),\"\",IF(C{r}&\"\"=D{r}&\"\",\"ผู้โอนกับผู้รับต้องเป็นคนละบัญชี\"," +
+        $"IF(ISNA(MATCH(C{r}&\"\",{bkKey},0)),\"ไม่พบบัญชีผู้โอน\",IF(ISNA(MATCH(D{r}&\"\",{bkKey},0)),\"ไม่พบบัญชีผู้รับ\",\"ถูกต้อง\"))))";
+}
+foreach (var col in new[] { 1, 3, 4 })
+{
+    var rg = wsBank.Range(FirstDataRow, col, BankLast, col);
+    rg.Style.Fill.BackgroundColor = yellow; rg.Style.Protection.Locked = false; rg.Style.NumberFormat.Format = "@";
+}
+foreach (var col in new[] { 2, 5 }) wsBank.Range(FirstDataRow, col, BankLast, col).Style.Fill.BackgroundColor = grey;
+wsBank.Range(FirstDataRow, 5, BankLast, 5).AddConditionalFormat().WhenNotEquals("ถูกต้อง").Font.SetFontColor(XLColor.Red);
+var bankItems = wsBank.Range(FirstDataRow, 1, BankLast, bankHeaders.Length);
+bankItems.Style.Border.InsideBorder = XLBorderStyleValues.Hair;
+bankItems.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+wsBank.Column(1).Width = 18; wsBank.Column(2).Width = 50; wsBank.Column(3).Width = 20; wsBank.Column(4).Width = 20; wsBank.Column(5).Width = 32;
+wsBank.SheetView.FreezeRows(4);
+wsBank.Protect().AllowElement(XLSheetProtectionElements.SelectEverything);
+
+// สีแท็บ: กรอก = เหลือง, อ้างอิง = เทา, master ท่อน = ฟ้า
+foreach (var ws in new[] { wsItem, wsBank }) ws.SetTabColor(XLColor.FromHtml("#FFC000"));
+foreach (var ws in new[] { wsHead, wsAcc, wsDept, wsCc, wsBankRef }) ws.SetTabColor(XLColor.FromHtml("#A6A6A6"));
+foreach (var m in masters) m.Sheet.SetTabColor(XLColor.FromHtml("#9BC2E6"));
+wsHelp.SetTabActive();
+
+wb.SaveAs(output);
+Console.WriteLine("saved " + output);
+
+// ---------- ตรวจไฟล์: ใส่ค่าทดสอบลงสำเนา (ไม่บันทึก) แล้วให้ ClosedXML คำนวณสูตร ----------
+static void Verify(string path)
+{
+    using var wb = new XLWorkbook(path);
+    Console.WriteLine("sheets: " + string.Join(", ", wb.Worksheets.Select(w => w.Name)));
+    foreach (var n in new[] { "TEMPLATE_VERSION", "TRANSFER_ROUNDNO", "TRANSFER_ID" })
+        Console.WriteLine($"{n}: " + wb.DefinedNames.Single(x => x.Name == n).Ranges.First().FirstCell().GetString());
+    var item = wb.Worksheet("รายการโอน");
+    var head = wb.Worksheet("ข้อมูลใบโอน");
+    var acc = wb.Worksheet("ข้อมูลบัญชี");
+    var cc = wb.Worksheet("ศูนย์ต้นทุน");
+    var bank = wb.Worksheet("บัญชีธนาคาร");
+    var bkRef = wb.Worksheet("ข้อมูลบัญชีธนาคาร");
+    Console.WriteLine("item headers: " + string.Join(" | ", Enumerable.Range(1, 25).Select(c => $"{XLHelper.GetColumnLetterFromNumber(c)}:{item.Cell(4, c).GetString()}")));
+    foreach (var s in new[] { "แหล่งเงิน", "แผนงาน", "ผลผลิต", "กิจกรรม", "ประเภทรายจ่าย", "รหัสงบประมาณ", "รหัสบัญชี", "รหัสบัญชีย่อย", "หน่วยงาน", "ศูนย์ต้นทุน" })
+        Console.WriteLine($"  sheet {s}: {wb.Worksheet(s).Range("A5:A6000").CellsUsed().Count()} rows");
+
+    var ccRows = cc.Range("A5:E2000").Rows().Where(x => x.Cell(1).GetString() != "").ToList();
+    var cc1 = ccRows[0];
+    var cc2 = ccRows.First(x => x.Cell(5).GetString() != cc1.Cell(5).GetString());
+    const int cDept = 10, cCc = 11, cAmt = 12;
+    void Paste(int row, int accRow) { for (int s = 0; s < 8; s++) item.Cell(row, 2 + s).Value = acc.Cell(accRow, 1 + s).GetString(); }
+    void Org(int row, IXLRangeRow ccRow, string deptOverride = null) { item.Cell(row, cDept).Value = deptOverride ?? ccRow.Cell(5).GetString(); item.Cell(row, cCc).Value = ccRow.Cell(1).GetString(); }
+    int FindAcc(Func<IXLRangeRow, bool> f) => acc.Range("A5:H2000").Rows().First(x => x.Cell(1).GetString() != "" && f(x)).RowNumber();
+    int blankPlanRow = FindAcc(x => x.Cell(2).GetString() == "");
+    int otherParentRow = FindAcc(x => x.Cell(7).GetString() == "5102010199" && x.Cell(8).GetString() == "230041");
+
+    Paste(5, 5); Org(5, cc1); item.Cell(5, cAmt).Value = 150000;                                    // ถูกต้อง
+    Paste(6, 6); Org(6, cc2); item.Cell(6, cAmt).Value = 87500.5;                                   // ถูกต้อง
+    Paste(7, 5); item.Cell(7, 9).Value = "999999"; item.Cell(7, cDept).Value = "9999999999"; item.Cell(7, cCc).Value = "1234567890"; item.Cell(7, cAmt).Value = 10; // บัญชีย่อยไม่มี + หน่วยงาน/ศูนย์ไม่มี
+    Paste(8, 5); Org(8, cc2, cc1.Cell(5).GetString()); item.Cell(8, cAmt).Value = 1;              // ศูนย์ต้นทุนสังกัดหน่วยงานอื่น
+    Paste(9, 5); item.Cell(9, 2).Value = double.Parse(acc.Cell(5, 1).GetString()); item.Cell(9, 3).Value = double.Parse(acc.Cell(5, 2).GetString());
+    item.Cell(9, cDept).Value = double.Parse(cc1.Cell(5).GetString()); item.Cell(9, cCc).Value = double.Parse(cc1.Cell(1).GetString()); item.Cell(9, cAmt).Value = 1; // วางเป็นตัวเลข
+    Paste(10, 5); item.Cell(10, 7).Value = double.Parse(acc.Cell(5, 6).GetString()); Org(10, cc1); item.Cell(10, cAmt).Value = 1; // รหัสงบ 20 หลักเป็นตัวเลข
+    Paste(11, 5); item.Cell(11, 3).Value = "55555"; Org(11, cc1); item.Cell(11, cAmt).Value = 1;   // แผนงานไม่มี
+    Paste(12, blankPlanRow); Org(12, cc1); item.Cell(12, cAmt).Value = 1;                           // แผนงานว่าง
+    Paste(13, 5); item.Cell(13, 3).Value = "00000"; Org(13, cc1); item.Cell(13, cAmt).Value = 1;    // แผนงานมีใน master แต่ชุดไม่มี
+    Paste(14, otherParentRow); Org(14, cc1); item.Cell(14, cAmt).Value = 1;                          // บัญชีย่อยใน master อยู่ใต้บัญชีอื่น
+
+    for (int i = 5; i <= 15; i++)
+        Console.WriteLine($"row {i}: A=[{item.Cell(i, 1).Value}] N=[{item.Cell(i, 14).Value}] O=[{item.Cell(i, 15).Value}] P=[{item.Cell(i, 16).Value}] Q=[{item.Cell(i, 17).Value}]\n" +
+            "        " + string.Join(" | ", Enumerable.Range(18, 8).Select(c => item.Cell(i, c).GetFormattedString())));
+    Console.WriteLine($"head count=[{head.Cell(14, 2).Value}] sum=[{head.Cell(15, 2).Value}]");
+
+    var acc1 = bkRef.Cell(5, 1).GetString(); var acc2 = bkRef.Cell(6, 1).GetString();
+    bank.Cell(5, 1).Value = cc.Cell(5, 1).GetString(); bank.Cell(5, 3).Value = acc1; bank.Cell(5, 4).Value = acc2;
+    bank.Cell(6, 1).Value = cc.Cell(5, 1).GetString(); bank.Cell(6, 3).Value = acc1; bank.Cell(6, 4).Value = acc1;
+    for (int i = 5; i <= 6; i++) Console.WriteLine($"bank {i}: B=[{bank.Cell(i, 2).Value}] E=[{bank.Cell(i, 5).Value}]");
+
+    int formulas = 0, errors = 0;
+    foreach (var ws in wb.Worksheets)
+        foreach (var c in ws.CellsUsed(XLCellsUsedOptions.All).Where(c => c.HasFormula))
+        {
+            formulas++;
+            try { if (c.Value.IsError) { errors++; if (errors <= 5) Console.WriteLine($"ERR {ws.Name}!{c.Address}: {c.Value}"); } }
+            catch (Exception e) { errors++; if (errors <= 5) Console.WriteLine($"EXC {ws.Name}!{c.Address}: {e.Message}"); }
+        }
+    Console.WriteLine($"formulas={formulas} errors={errors}");
+    Console.WriteLine($"B5 locked={item.Cell(5, 2).Style.Protection.Locked} N5 locked={item.Cell(5, 14).Style.Protection.Locked} protected={item.IsProtected}");
+}
+
+record Master(int SegNo, string Header, string SheetName, string View, string Sql, string[] Cols, bool PairWithAccount = false)
+{
+    public DataTable Data { get; set; }
+    public IXLWorksheet Sheet { get; set; }
+    public int Last { get; set; }
+    public int PairCol { get; set; }
+    public int ListCol { get; set; }
+    public int ListLast { get; set; }
+}
