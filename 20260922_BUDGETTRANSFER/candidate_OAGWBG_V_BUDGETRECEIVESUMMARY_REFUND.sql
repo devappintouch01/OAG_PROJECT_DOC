@@ -1,0 +1,13 @@
+-- ============================================================================
+-- CANDIDATE (ยังไม่ deploy) — OAGWBG_V_BUDGETRECEIVESUMMARY_REFUND
+-- เพิ่ม 2 คอลัมน์: TOTALPAYMENTAMOUNT, TOTALOBLIGATIONAMOUNT
+-- สร้างจาก DBMS_METADATA.GET_DDL ของ PREPROD (2026-09-22) แล้วแก้เฉพาะ 4 บรรทัด
+--   BR_GRP      : +SUM(NVL(BR.TOTALPAYMENTAMOUNT,0)), +SUM(NVL(BR.TOTALOBLIGATIONAMOUNT,0))
+--   SELECT นอก : +A.TOTALPAYMENTAMOUNT, +A.TOTALOBLIGATIONAMOUNT
+-- GROUP BY / JOIN / WHERE ไม่แตะเลย
+--
+-- ผลตรวจกับ PREPROD (ดู result.md หัวข้อ 5):
+--   จำนวนแถว  17,367 -> 17,367  (เท่าเดิม)
+--   MINUS สองทาง = 0 / 0        (ไม่มีแถวเพิ่ม ไม่มีแถวหาย ค่าทุกคอลัมน์เดิมตรงกัน)
+-- ============================================================================
+  

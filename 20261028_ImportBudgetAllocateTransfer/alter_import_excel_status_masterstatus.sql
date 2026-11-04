@@ -1,0 +1,39 @@
+-- =============================================================================
+-- ALTER OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL.IMPORTSTATUS
+--       VARCHAR2 (U/V/I/E/C) → NUMBER อ้างอิง OAGWBG_MASTERSTATUS กลุ่ม 4xxxx
+-- วันที่: 2026-10-28
+--
+-- ใช้เฉพาะ PREPROD (สร้างตารางไปแล้วด้วย IMPORTSTATUS แบบตัวอักษร)
+-- PROD ให้รัน create_table_budgetallocatetransfer_import.sql ซึ่งเป็น NUMBER แล้ว
+--
+-- ลำดับ: รัน insert_masterstatus_import_excel.sql ก่อนหรือหลังก็ได้ (ไม่มี FK ผูกกัน)
+--
+-- ⚠️ Oracle เปลี่ยนชนิดคอลัมน์ได้เฉพาะตอนคอลัมน์ว่าง (ORA-01439) — ขั้น 0 ต้องได้ 0
+-- =============================================================================
+
+-- 0. ต้องได้ 0
+SELECT COUNT(*) FROM OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL;
+
+-- 1. ถอด CHECK ตัวอักษรเดิม
+ALTER TABLE OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL DROP CONSTRAINT CK_OAGWBG_BGALLOCTRF_IMP_STS;
+
+-- 2. เปลี่ยนชนิดเป็น NUMBER + default = 40101 (อัปโหลดแล้ว)
+ALTER TABLE OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL MODIFY (IMPORTSTATUS NUMBER(10) DEFAULT 40101);
+
+-- 3. CHECK ใหม่ (OAGWBG_MASTERSTATUS ไม่มี PK จึงทำ FK ไม่ได้)
+ALTER TABLE OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL ADD CONSTRAINT CK_OAGWBG_BGALLOCTRF_IMP_STS
+    CHECK (IMPORTSTATUS IN (40101, 40201, 40301, 40401, 40501));
+
+-- 4. comment
+COMMENT ON COLUMN OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL.IMPORTSTATUS IS 'สถานะ อ้างอิง OAGWBG_MASTERSTATUS.ID: 40101=อัปโหลดแล้ว, 40201=ตรวจผ่านรอยืนยัน, 40301=นำเข้าแล้ว, 40401=ตีกลับ (ผิดอย่างน้อย 1 แถว ไม่นำเข้าเลย), 40501=ยกเลิก';
+
+-- 5. ยืนยันผล — IMPORTSTATUS เป็น NUMBER(10), NOT NULL, default 40101, CHECK 5 รหัส
+SELECT COLUMN_NAME, DATA_TYPE, DATA_PRECISION, NULLABLE, DATA_DEFAULT
+FROM   USER_TAB_COLUMNS
+WHERE  TABLE_NAME = 'OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL'
+  AND  COLUMN_NAME = 'IMPORTSTATUS';
+
+SELECT CONSTRAINT_NAME, SEARCH_CONDITION_VC, STATUS
+FROM   USER_CONSTRAINTS
+WHERE  TABLE_NAME = 'OAGWBG_BUDGETALLOCATETRANSFER_IMPORT_EXCEL'
+  AND  CONSTRAINT_NAME = 'CK_OAGWBG_BGALLOCTRF_IMP_STS';

@@ -1,0 +1,831 @@
+--------------------------------------------------------------------------------
+-- DEPLOY ALL — แก้ปัญหารายงานกันเงินงบประมาณ timeout (ครบทั้ง 5 view)
+--------------------------------------------------------------------------------
+-- วันที่      : 2026-08-27
+-- ทดสอบแล้วบน : PREPROD 172.16.11.19:1541 / ebs_PRE (schema OAGWBG)
+-- rollback   : rollback_all.sql
+--
+-- ⚠️ ก่อนรัน
+--   1) ต่อ VPN (F5 BIG-IP Edge Client) ให้เรียบร้อย
+--   2) login เป็น user OAGWBG
+--   3) ต้องมีสิทธิ์ SELECT บน APPS.OAGPO_TRANSACTION_STATUS_V
+--   4) เก็บ DDL เดิมของ environment ปลายทางไว้ก่อนเสมอ :
+--        SELECT TEXT FROM USER_VIEWS WHERE VIEW_NAME = '<ชื่อ view>';
+--      (rollback_all.sql ในโฟลเดอร์นี้เป็น DDL ของ PREPROD ไม่ใช่ของ PROD)
+--
+-- แนวคิดการแก้ (เหมือนกันทั้ง 5 ตัว) :
+--   APPS.OAGPO_TRANSACTION_STATUS_V (18,507 แถว / ~10 วิ) push predicate ไม่ได้
+--   ทุก view เคยอ้างมันซ้ำหลายรอบ → ยกไปเป็น CTE `TSV_RAW` ให้ materialize
+--   ครั้งเดียว + อ่านตาราง OAGWBG_BUDGETRESERVEDITEM ตรง ๆ แทน view ที่แพง
+--   *** SELECT list / WHERE / logic คงเดิมทุกตัวอักษร — ตรวจด้วย MINUS สองทาง = 0 ***
+--
+-- ผลที่คาดหวัง (วัดจริงบน PREPROD)
+--   OAGWBG_R_BUDGETOVERLAP_CATEGORY  : TIMEOUT >300 วิ  ->  12.7 วิ
+--   OAGWBG_R_BUDGETOVERLAP_EXPAND    :         76.4 วิ  ->  12.8 วิ
+--   OAGWBG_R_BUDGETOVERLAP           :         31.6 วิ  ->  11.7 วิ
+--   OAGWBG_R_BUDGETOVERLAP_RESERVED  :         15.7 วิ  ->  11.7 วิ
+--   OAGWBG_V_BUDGETRESERVEDITEM      :         14.6 วิ  ->  10.9 วิ
+--------------------------------------------------------------------------------
+
+SET DEFINE OFF
+SET SQLBLANKLINES ON
+
+PROMPT ============================================================
+PROMPT 1/5 : OAGWBG_V_BUDGETRESERVEDITEM  (view กลาง ต้องมาก่อน)
+PROMPT ============================================================
+CREATE OR REPLACE VIEW OAGWBG_V_BUDGETRESERVEDITEM AS
+WITH TSV_RAW AS (
+    -- materialize ครั้งเดียว แล้วให้ ovbr / ovbo / CFPO / X อ่านซ้ำจาก temp
+    SELECT /*+ MATERIALIZE */
+           PR_NUMBER, PR_TRANSFER_NO, PR_BUDGET_ACCOUNT,
+           PO_NUMBER, PO_TRANSFER_NO, PO_BUDGET_ACCOUNT,
+           PO_LINE_ID, PO_CONTRACT_DATE
+    FROM   APPS.OAGPO_TRANSACTION_STATUS_V
+)
+SELECT
+    BR."ID",
+    BR."CREATEBY",
+    BR."CREATEON",
+    BR."UPDATEBY",
+    BR."UPDATEON",
+    BR."BUDGETYEAR",
+    BR."BUDGETREVERSEDID",
+    BR."TOTALHASPOAMOUNT",
+    BR."TOTALHASPRAMOUNT",
+    BR."TOTALBALANCEAMOUNT",
+    BR."BOOKNUMBER",
+    BR."DESCRIPTION",
+    BR."SUPPLIER",
+    BR."COSTCENTERCODE",
+    BR."HEADERID",
+    BR."CATEGORYCODE",
+    BR."ACCOUNTCODE",
+    BR."STATUSID",
+    CASE
+        WHEN MS.NAME LIKE '%บันทึก%' THEN 'ส่งเรื่องให้พิจารณา'
+        ELSE MS.NAME
+    END AS STATUSNAME,
+    BR."REASON",
+    BB."BANKACCOUNTGIVER",
+    BB."BANKACCOUNTRECEIVER",
+    BS.COSTCENTERID,
+    BS.DEPARTMENTID,
+    BR.BUDGETRESERVEDTYPE,
+    BR.PARENTID,
+    BR.TRANSFERNO,
+    BR.PO_CONTRACT,
+    BR.PO_CONTRACT_START_DATE,
+    BR.PO_CONTRACT_DUE_DATE,
+    BR.OVERLAPYEAR,
+    BR.OVERLAPROUND,
+    BR.APPROVE,
+    BR.REMAININGREFUND,
+   COALESCE(BR.LINEID,BR1.LINEID) AS LINEID,
+    --BR.LINEID AS LINEID,
+    BR.NOTE,
+    BR.USAGEAMOUNT,
+    ovbr.PR_TRANSFER_NO AS PR_TRANSFER_NO,
+    ovbo.PO_TRANSFER_NO AS PO_TRANSFER_NO,
+    CFPO.PO_CONTRACT_DATE AS CONTRACT_CARRY_FORWARD_PO,
+    BR.RESERVEDNO_ADD
+FROM OAGWBG_BUDGETRESERVEDITEM BR
+LEFT JOIN OAGWBG_BUDGETRESERVEDITEM BR1
+	ON BR.PARENTID = BR1.ID
+LEFT JOIN OAGWBG_MASTERSTATUS MS
+       ON MS."ID" = BR."STATUSID"
+LEFT JOIN OAGWBG_BUDGETRESERVED_BANKACCOUNT BB
+       ON BR."BUDGETBANKACCOUNTID" = BB."ID"
+LEFT JOIN OAGWBG_V_BUDGETRESERVED BS 
+        ON BR.BUDGETREVERSEDID = BS.ID
+LEFT JOIN (SELECT * FROM TSV_RAW a WHERE a.PR_TRANSFER_NO IS NOT NULL) ovbr
+		ON ovbr.PR_BUDGET_ACCOUNT = BR.ACCOUNTCODE AND BR.BOOKNUMBER = ovbr.PR_NUMBER 
+LEFT JOIN (SELECT * FROM TSV_RAW b WHERE b.PO_TRANSFER_NO IS NOT NULL) ovbo
+		ON ovbo.PO_BUDGET_ACCOUNT = BR.ACCOUNTCODE AND BR.BOOKNUMBER = ovbo.PO_NUMBER 
+LEFT JOIN TSV_RAW CFPO
+ON (
+    CFPO.PR_BUDGET_ACCOUNT = BR.ACCOUNTCODE
+    OR (
+        CFPO.PO_BUDGET_ACCOUNT = BR.ACCOUNTCODE
+        AND NOT EXISTS (
+            SELECT 1
+            FROM TSV_RAW X
+            WHERE X.PO_NUMBER = BR.BOOKNUMBER
+              AND X.PO_LINE_ID = COALESCE(BR.LINEID, BR1.LINEID)
+              AND X.PR_BUDGET_ACCOUNT = BR.ACCOUNTCODE
+        )
+    )
+)
+AND CFPO.PO_NUMBER = BR.BOOKNUMBER
+AND CFPO.PO_LINE_ID = COALESCE(BR.LINEID, BR1.LINEID)
+
+/
+
+PROMPT ============================================================
+PROMPT 2/5 : OAGWBG_R_BUDGETOVERLAP_CATEGORY  (Template 1)
+PROMPT ============================================================
+CREATE OR REPLACE VIEW OAGWBG_R_BUDGETOVERLAP_CATEGORY AS
+WITH TSV_RAW AS (
+    -- materialize ครั้งเดียว แล้วให้ทุกจุดข้างล่างอ่านซ้ำจาก temp
+    SELECT /*+ MATERIALIZE */
+           PR_STATUS, PR_BUDGET_ACCOUNT,
+           PO_STATUS, PO_BUDGET_ACCOUNT,
+           PO_NUMBER, PO_LINE_ID, PO_CONTRACT_DATE
+    FROM   APPS.OAGPO_TRANSACTION_STATUS_V
+)
+--==============================================================================
+-- 1) ส่วนกลาง : ระดับหมวด (ยอดกันเงินก้อนแรก)
+--==============================================================================
+SELECT
+    BRS.ID                                   AS BUDGETRESERVEDID,
+    CAT.BUDGETYEAR                           AS BUDGETYEAR,
+    BRS.TRANSFERNO                           AS TRANSFERNO,
+    BRS.RESERVATIONNAME                      AS RESERVATIONNAME,
+    BRS.RESERVATIONTYPE                      AS RESERVATIONTYPE,
+    BRS.BUDGETRESERVEDTYPE                   AS BUDGETRESERVEDTYPE,
+    BRS.REASON                               AS REASON,
+    BRS.CREATEON                             AS RESERVEDDATE,
+    BRS.DEPARTMENTID                         AS DEPARTMENTID,
+    DEPTV.NAME                               AS DEPARTMENTNAME,
+    BRS.COSTCENTERID                         AS COSTCENTERID,
+    COSTV.NAME                               AS COSTCENTERNAME,
+    COSTV.REGIONID                           AS REGIONID,
+    BRS.BUDGETRESERVEDREGION                 AS BUDGETRESERVEDREGION,
+
+    -- ไม่มี item ในระดับหมวด
+    CAST(NULL AS NUMBER)                     AS ITEMID,
+    CAT.CATEGORYNAME                         AS DESCRIPTION,
+    CAST(NULL AS VARCHAR2(240))              AS SUPPLIER,
+    CAST(NULL AS VARCHAR2(50))               AS ITEMRESERVEDTYPE,
+    CAST(NULL AS NUMBER)                     AS PRAMOUNT,
+    CAST(NULL AS NUMBER)                     AS POAMOUNT,
+
+    -- ยอดกันเงินก้อนแรกของหมวด
+    CAT.TOTALRESERVEDAMOUNT                  AS TOTALBALANCEAMOUNT,
+
+    CAST(NULL AS VARCHAR2(4000))             AS ITEMREASON,
+    BRS.STATUSID                             AS STATUSID,
+    CASE
+        WHEN BRS.ROUNDINTERFACE = 1 THEN 'กันเงิน'
+        WHEN BRS.ROUNDINTERFACE > 1 THEN 'ขยายระยะเวลา'
+        ELSE 'ร่าง'
+    END                                      AS STATUSNAME,
+    BRS.CREATEON                             AS RESERVEDITEMDATE,
+    TO_CHAR(BRS.CREATEON,'MM')               AS RESERVEDMONTH,
+    CAST(NULL AS VARCHAR2(240))              AS PO_CONTRACT,
+    CAST(NULL AS VARCHAR2(240))              AS PO_CONTRACT_DATE,
+    CAST(NULL AS VARCHAR2(240))              AS PO_CONTRACT_START_DATE,
+    CAST(NULL AS VARCHAR2(240))              AS PO_CONTRACT_DUE_DATE,
+    CAST(NULL AS VARCHAR2(20))               AS BOOKNUMBER,
+    CAST(NULL AS VARCHAR2(240))              AS COSTCENTERCODE,
+    CAST(NULL AS VARCHAR2(337))              AS ACCOUNTCODE,
+    BRS.BUDGETSOURCEID                       AS BUDGETSOURCEID,
+    CAST(NULL AS VARCHAR2(1348))             AS BUDGETCODE,
+
+    CAT.CATEGORYID                           AS CATEGORYID,
+    CAT.CATEGORYNAME                         AS CATEGORYNAME,
+    CAT.CATEGORY_CODE                        AS CATEGORY_CODE,
+    CAT.TOTALRESERVEDAMOUNT                  AS TOTALRESERVEDAMOUNT,
+    CAT.BUDGETPLANID                         AS BUDGETPLANID,
+    CAT.PLAN_NAME                            AS PLAN_NAME,
+    CAT.PRODUCTID                            AS PRODUCTID,
+    CAT.PRODUCT_NAME                         AS PRODUCT_NAME,
+    CAT.ACTIVITYID                           AS ACTIVITYID,
+    CAT.ACTIVITY_NAME                        AS ACTIVITY_NAME,
+    CAT.BUDGETCODEID                         AS BUDGETCODEID,
+
+    -- ระดับหมวดไม่ผูกกับ PR/PO จึงระบุมีหนี้/ไม่มีหนี้ไม่ได้
+    'ไม่ระบุ'                                AS RESERVEDTYPENAME,
+
+    -- ผลพิจารณา : ส่วนกลางยึดสถานะของหัวกันเงิน
+    CASE BRS.STATUSID
+        WHEN 20202 THEN 'พิจารณาแล้ว'
+        WHEN 90102 THEN 'ขยายเวลา'
+        WHEN 90109 THEN 'ยกเลิก'
+        WHEN 90110 THEN 'ยกเลิกการกันเงิน'
+        WHEN 90101 THEN 'ปกติ'
+        ELSE 'อื่น ๆ'
+    END                                      AS RESERVEDSTATUSNAME,
+
+    CAST(NULL AS VARCHAR2(240))              AS PR_STATUS,
+    CAST(NULL AS VARCHAR2(240))              AS PO_STATUS
+FROM       OAGWBG_V_BUDGETRESERVED          BRS
+INNER JOIN (
+    -- DISTINCT กันแถวซ้ำจากบั๊ก join BUDGETCODE_YEAR ใน view ต้นทาง
+    SELECT DISTINCT
+           BUDGETRESERVEDID, CATEGORYID, CATEGORYNAME, CATEGORY_CODE,
+           BUDGETYEAR, TOTALRESERVEDAMOUNT, BUDGETPLANID, PLAN_NAME,
+           PRODUCTID, PRODUCT_NAME, ACTIVITYID, ACTIVITY_NAME, BUDGETCODEID
+    FROM   OAGWBG_V_BUDGETRESERVED_CATEGORY
+)                                            CAT ON BRS.ID = CAT.BUDGETRESERVEDID
+LEFT JOIN  OAGWBG_V_EXT_OAGGL_DEPARTMENT_V   DEPTV ON BRS.DEPARTMENTID = DEPTV.ID
+LEFT JOIN  OAGWBG_V_EXT_OAGGL_COST_CENTER_V  COSTV ON BRS.COSTCENTERID = COSTV.ID
+WHERE      BRS.BUDGETRESERVEDREGION = 'C'
+
+UNION ALL
+
+--==============================================================================
+-- 2) ภูมิภาค : ระดับรายการ เฉพาะรายการที่กันเงินแล้ว
+--==============================================================================
+SELECT
+    BRS.ID                                   AS BUDGETRESERVEDID,
+    COALESCE(BRSI.BUDGETYEAR, BRS.BUDGETYEAR) AS BUDGETYEAR,
+    BRS.TRANSFERNO                           AS TRANSFERNO,
+    BRS.RESERVATIONNAME                      AS RESERVATIONNAME,
+    BRS.RESERVATIONTYPE                      AS RESERVATIONTYPE,
+    BRS.BUDGETRESERVEDTYPE                   AS BUDGETRESERVEDTYPE,
+    BRS.REASON                               AS REASON,
+    BRS.CREATEON                             AS RESERVEDDATE,
+    BRS.DEPARTMENTID                         AS DEPARTMENTID,
+    DEPTV.NAME                               AS DEPARTMENTNAME,
+    BRS.COSTCENTERID                         AS COSTCENTERID,
+    COSTV.NAME                               AS COSTCENTERNAME,
+    COSTV.REGIONID                           AS REGIONID,
+    BRS.BUDGETRESERVEDREGION                 AS BUDGETRESERVEDREGION,
+
+    BRSI.ID                                  AS ITEMID,
+    BRSI.DESCRIPTION                         AS DESCRIPTION,
+    BRSI.SUPPLIER                            AS SUPPLIER,
+    BRSI.BUDGETRESERVEDTYPE                  AS ITEMRESERVEDTYPE,
+    BRSI.TOTALHASPRAMOUNT                    AS PRAMOUNT,
+    BRSI.TOTALHASPOAMOUNT                    AS POAMOUNT,
+    BRSI.TOTALBALANCEAMOUNT                  AS TOTALBALANCEAMOUNT,
+    BRSI.REASON                              AS ITEMREASON,
+    BRSI.STATUSID                            AS STATUSID,
+    CASE
+        WHEN BRS.ROUNDINTERFACE = 1 THEN 'กันเงิน'
+        WHEN BRS.ROUNDINTERFACE > 1 THEN 'ขยายระยะเวลา'
+        ELSE 'ร่าง'
+    END                                      AS STATUSNAME,
+    BRSI.CREATEON                            AS RESERVEDITEMDATE,
+    TO_CHAR(BRSI.CREATEON,'MM')              AS RESERVEDMONTH,
+    BRSI.PO_CONTRACT                         AS PO_CONTRACT,
+    BRSI.CONTRACT_CARRY_FORWARD_PO           AS PO_CONTRACT_DATE,
+    BRSI.PO_CONTRACT_START_DATE              AS PO_CONTRACT_START_DATE,
+    BRSI.PO_CONTRACT_DUE_DATE                AS PO_CONTRACT_DUE_DATE,
+    BRSI.BOOKNUMBER                          AS BOOKNUMBER,
+    BRSI.COSTCENTERCODE                      AS COSTCENTERCODE,
+    BRSI.ACCOUNTCODE                         AS ACCOUNTCODE,
+    CASE
+        WHEN BRS.BUDGETRESERVEDREGION = 'P' AND BRSI.ACCOUNTCODE IS NOT NULL
+             THEN REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 4)
+        ELSE BRS.BUDGETSOURCEID
+    END                                      AS BUDGETSOURCEID,
+    REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 9) AS BUDGETCODE,
+
+    CAST(NULL AS NUMBER)                     AS CATEGORYID,
+    CAST(NULL AS VARCHAR2(240))              AS CATEGORYNAME,
+    CAST(NULL AS VARCHAR2(240))              AS CATEGORY_CODE,
+    CAST(NULL AS NUMBER)                     AS TOTALRESERVEDAMOUNT,
+    CAST(NULL AS VARCHAR2(240))              AS BUDGETPLANID,
+    CAST(NULL AS VARCHAR2(240))              AS PLAN_NAME,
+    CAST(NULL AS VARCHAR2(240))              AS PRODUCTID,
+    CAST(NULL AS VARCHAR2(240))              AS PRODUCT_NAME,
+    CAST(NULL AS VARCHAR2(240))              AS ACTIVITYID,
+    CAST(NULL AS VARCHAR2(240))              AS ACTIVITY_NAME,
+    CAST(NULL AS VARCHAR2(240))              AS BUDGETCODEID,
+
+    CASE
+        WHEN BRSI.BUDGETRESERVEDTYPE = 'O' THEN 'มีหนี้'
+        WHEN BRSI.BUDGETRESERVEDTYPE = 'R' THEN 'ไม่มีหนี้'
+        ELSE 'ไม่ระบุ'
+    END                                      AS RESERVEDTYPENAME,
+
+    -- ผลพิจารณา : ภูมิภาคยึดสถานะของรายการ
+    CASE BRSI.STATUSID
+        WHEN 20202 THEN 'พิจารณาแล้ว'
+        WHEN 90102 THEN 'ขยายเวลา'
+        WHEN 90109 THEN 'ยกเลิก'
+        WHEN 90110 THEN 'ยกเลิกการกันเงิน'
+        WHEN 90101 THEN 'ปกติ'
+        ELSE 'อื่น ๆ'
+    END                                      AS RESERVEDSTATUSNAME,
+
+    TSV.PR_STATUS                            AS PR_STATUS,
+    TSV.PO_STATUS                            AS PO_STATUS
+FROM       OAGWBG_V_BUDGETRESERVED          BRS
+INNER JOIN (
+    -- แทน OAGWBG_V_BUDGETRESERVEDITEM : อ่านตารางจริง แล้วคำนวณ
+    -- CONTRACT_CARRY_FORWARD_PO เองด้วย logic เดิมทุกตัวอักษร (อ้าง TSV_RAW แทน EBS view)
+    SELECT BR.ID,
+           BR.BUDGETREVERSEDID,
+           BR.BUDGETYEAR,
+           BR.DESCRIPTION,
+           BR.SUPPLIER,
+           BR.BUDGETRESERVEDTYPE,
+           BR.TOTALHASPRAMOUNT,
+           BR.TOTALHASPOAMOUNT,
+           BR.TOTALBALANCEAMOUNT,
+           BR.REASON,
+           BR.STATUSID,
+           BR.CREATEON,
+           BR.PO_CONTRACT,
+           BR.PO_CONTRACT_START_DATE,
+           BR.PO_CONTRACT_DUE_DATE,
+           BR.BOOKNUMBER,
+           BR.COSTCENTERCODE,
+           BR.ACCOUNTCODE,
+           CFPO.PO_CONTRACT_DATE            AS CONTRACT_CARRY_FORWARD_PO
+    FROM       OAGWBG_BUDGETRESERVEDITEM BR
+    LEFT JOIN  OAGWBG_BUDGETRESERVEDITEM BR1 ON BR.PARENTID = BR1.ID
+    LEFT JOIN  TSV_RAW CFPO
+           ON (
+                CFPO.PR_BUDGET_ACCOUNT = BR.ACCOUNTCODE
+                OR (
+                    CFPO.PO_BUDGET_ACCOUNT = BR.ACCOUNTCODE
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM   TSV_RAW X
+                        WHERE  X.PO_NUMBER  = BR.BOOKNUMBER
+                          AND  X.PO_LINE_ID = COALESCE(BR.LINEID, BR1.LINEID)
+                          AND  X.PR_BUDGET_ACCOUNT = BR.ACCOUNTCODE
+                    )
+                )
+              )
+          AND CFPO.PO_NUMBER  = BR.BOOKNUMBER
+          AND CFPO.PO_LINE_ID = COALESCE(BR.LINEID, BR1.LINEID)
+)                                            BRSI  ON BRS.ID = BRSI.BUDGETREVERSEDID
+LEFT JOIN  OAGWBG_V_EXT_OAGGL_DEPARTMENT_V  DEPTV ON BRS.DEPARTMENTID = DEPTV.ID
+LEFT JOIN  OAGWBG_V_EXT_OAGGL_COST_CENTER_V COSTV ON BRS.COSTCENTERID = COSTV.ID
+LEFT JOIN (
+    SELECT PR_BUDGET_ACCOUNT, PO_BUDGET_ACCOUNT,
+           MAX(PR_STATUS) AS PR_STATUS,
+           MAX(PO_STATUS) AS PO_STATUS
+    FROM   TSV_RAW
+    GROUP BY PR_BUDGET_ACCOUNT, PO_BUDGET_ACCOUNT
+)                                            TSV ON BRSI.ACCOUNTCODE = TSV.PR_BUDGET_ACCOUNT
+                                                AND BRSI.ACCOUNTCODE = TSV.PO_BUDGET_ACCOUNT
+WHERE      BRS.BUDGETRESERVEDREGION <> 'C'
+       AND BRSI.BUDGETRESERVEDTYPE IN ('O','R')
+
+/
+
+PROMPT ============================================================
+PROMPT 3/5 : OAGWBG_R_BUDGETOVERLAP_EXPAND    (Template 2)
+PROMPT ============================================================
+CREATE OR REPLACE VIEW OAGWBG_R_BUDGETOVERLAP_EXPAND AS
+WITH TSV_RAW AS (
+    -- materialize ครั้งเดียว แล้วให้ทุกจุดข้างล่างอ่านซ้ำจาก temp
+    SELECT /*+ MATERIALIZE */
+           PR_NUMBER, PR_STATUS, PR_BUDGET_ACCOUNT,
+           PO_NUMBER, PO_STATUS, PO_BUDGET_ACCOUNT,
+           PO_LINE_ID, PO_CONTRACT_DATE
+    FROM   APPS.OAGPO_TRANSACTION_STATUS_V
+)
+SELECT
+    -- ข้อมูลหลักจากหัวกันเงิน
+    BRS.ID AS BUDGETRESERVEDID,
+    COALESCE(BRSI.BUDGETYEAR, BRS.BUDGETYEAR) AS BUDGETYEAR,
+    BRS.TRANSFERNO,
+    BRS.RESERVATIONNAME,
+    BRS.RESERVATIONTYPE,
+    BRS.BUDGETRESERVEDTYPE,
+    SU.DEPARTMENTID AS DEPARTMENTID_CREATER,
+    SU.DEPARTMENTNAME AS DEPARTMENTNAME_CREATER,
+    SU.COSTCENTERID AS COSTCENTERID_CREATER,
+    SU.COSTCENTERNAME AS COSTCENTERNAME_CREATER,
+    BRS.REASON,
+    BRS.CREATEON AS RESERVEDDATE,
+    BRS.DEPARTMENTID,
+    DEPTV.NAME AS DEPARTMENTNAME,
+    BRS.COSTCENTERID,
+    COSTV.NAME AS COSTCENTERNAME,
+    COSTV.REGIONID,
+    BRS.BUDGETRESERVEDREGION ,
+    
+    -- ข้อมูลจากรายการกันเงิน (Item)
+    BRSI.ID AS ITEMID,
+    CASE WHEN  BRSI.BUDGETRESERVEDTYPE = 'EXPAND_LUMP' OR BRSI.BUDGETRESERVEDTYPE = 'CANCEL_LUMP' THEN  BR.CATEGORYNAME 
+    ELSE BRSI.DESCRIPTION END AS DESCRIPTION,
+    BRSI.SUPPLIER,
+    BRSI.BUDGETRESERVEDTYPE AS ITEMRESERVEDTYPE,
+    BRSI.TOTALHASPRAMOUNT AS PRAMOUNT,
+    CASE WHEN  BRSI.BUDGETRESERVEDTYPE = 'EXPAND_LUMP' OR BRSI.BUDGETRESERVEDTYPE = 'CANCEL_LUMP' THEN BRSI.USAGEAMOUNT
+    ELSE BRSI.TOTALHASPOAMOUNT END AS POAMOUNT, 
+    
+    BRSI.REASON AS ITEMREASON,
+    CASE 
+      WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRSI.STATUSID
+      ELSE BRS.STATUSID
+    END AS STATUSID,
+--    CASE 
+--      WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRSI.STATUSNAME
+--      ELSE BRS.STATUSNAME
+--    END AS STATUSNAME,
+    CASE
+            WHEN BRS.ROUNDINTERFACE = 1 THEN 'กันเงิน'
+            WHEN BRS.ROUNDINTERFACE > 1 THEN 'ขยายระยะเวลา'
+            ELSE 'ร่าง'
+    END AS STATUSNAME ,
+    
+    BRSI.CREATEON AS RESERVEDITEMDATE,
+    TO_CHAR(BRSI.CREATEON,'MM') AS RESERVEDMONTH,
+    BRSI.PO_CONTRACT,
+    BRSI.PO_CONTRACT_START_DATE,
+    BRSI.PO_CONTRACT_DUE_DATE,
+    BRSI.BOOKNUMBER,
+    BRSI.COSTCENTERCODE,
+    BRSI.ACCOUNTCODE,
+
+    -- ดึงรหัส segment ที่จำเป็น 
+    CASE BUDGETRESERVEDREGION
+            WHEN 'C' THEN REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 4)
+            WHEN 'P' THEN REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 4)
+            ELSE BRS.BUDGETSOURCEID
+    END AS BUDGETSOURCEID,
+    
+    REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 9) AS BUDGETCODE,
+
+
+    -- แปลงประเภทการกันเงิน (เพิ่มเรื่องขยายเวลาแล้ว)
+    CASE
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'O' THEN 'มีหนี้'
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'R' THEN 'ไม่มีหนี้'
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'EXPAND_PO' THEN 'มีหนี้'
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'EXPAND_PR' THEN 'ไม่มีหนี้'
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'CANCEL_PO' THEN 'มีหนี้'
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'CANCEL_PR' THEN 'ไม่มีหนี้'
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'EXPAND_LUMP' THEN 'ไม่มีหนี้'
+         WHEN BRSI.BUDGETRESERVEDTYPE = 'CANCEL_LUMP' THEN 'ไม่มีหนี้'
+        ELSE 'ไม่ระบุ'
+    END AS RESERVEDTYPENAME,
+
+    -- แสดงสถานะรายการตาม StatusId
+          CASE
+              WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 90102 THEN 'ขยายเวลา'
+              WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 90109 THEN 'ยกเลิก'
+              WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 90101 THEN 'ปกติ'
+               WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 20202 THEN 'พิจารณาแล้ว'
+              ELSE 'อื่น ๆ'
+          END AS RESERVEDSTATUSNAME,
+
+    -- ใช้ใน Template 2: รายงานขยายเวลา
+          CASE
+              WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 90102 
+              THEN 'ขยาย(กันต่อ)'
+              ELSE NULL
+          END AS EXTENSIONSTATUS,
+          
+    -- สถานะ PR/PO
+        CASE
+            WHEN BRSI.BUDGETRESERVEDTYPE IN ('R','EXPAND_PR')
+            THEN TSV.PR_STATUS
+        END AS PR_STATUS,
+        
+        CASE
+            WHEN BRSI.BUDGETRESERVEDTYPE IN ('O','EXPAND_PO')
+            THEN TSV.PO_STATUS
+        END AS PO_STATUS,
+   BRSI.CONTRACT_CARRY_FORWARD_PO AS CONTRACT_CARRY_FORWARD_PO,
+   BRSI.RESERVEDNO_ADD,
+   BRSI.OVERLAPROUND
+FROM OAGWBG_V_BUDGETRESERVED BRS 
+LEFT JOIN (
+    -- แทน OAGWBG_V_BUDGETRESERVEDITEM : อ่านตารางจริง + คำนวณ CONTRACT_CARRY_FORWARD_PO
+    -- ด้วย logic เดิมทุกตัวอักษร (อ้าง TSV_RAW แทน APPS.OAGPO_TRANSACTION_STATUS_V)
+    SELECT BR0.ID,
+           BR0.BUDGETREVERSEDID,
+           BR0.BUDGETYEAR,
+           BR0.DESCRIPTION,
+           BR0.SUPPLIER,
+           BR0.BUDGETRESERVEDTYPE,
+           BR0.TOTALHASPRAMOUNT,
+           BR0.TOTALHASPOAMOUNT,
+           BR0.USAGEAMOUNT,
+           BR0.REASON,
+           BR0.STATUSID,
+           BR0.CREATEON,
+           BR0.PO_CONTRACT,
+           BR0.PO_CONTRACT_START_DATE,
+           BR0.PO_CONTRACT_DUE_DATE,
+           BR0.BOOKNUMBER,
+           BR0.COSTCENTERCODE,
+           BR0.ACCOUNTCODE,
+           BR0.HEADERID,
+           BR0.RESERVEDNO_ADD,
+           BR0.OVERLAPROUND,
+           CFPO.PO_CONTRACT_DATE            AS CONTRACT_CARRY_FORWARD_PO
+    FROM       OAGWBG_BUDGETRESERVEDITEM BR0
+    LEFT JOIN  OAGWBG_BUDGETRESERVEDITEM BR1 ON BR0.PARENTID = BR1.ID
+    LEFT JOIN  TSV_RAW CFPO
+           ON (
+                CFPO.PR_BUDGET_ACCOUNT = BR0.ACCOUNTCODE
+                OR (
+                    CFPO.PO_BUDGET_ACCOUNT = BR0.ACCOUNTCODE
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM   TSV_RAW X
+                        WHERE  X.PO_NUMBER  = BR0.BOOKNUMBER
+                          AND  X.PO_LINE_ID = COALESCE(BR0.LINEID, BR1.LINEID)
+                          AND  X.PR_BUDGET_ACCOUNT = BR0.ACCOUNTCODE
+                    )
+                )
+              )
+          AND CFPO.PO_NUMBER  = BR0.BOOKNUMBER
+          AND CFPO.PO_LINE_ID = COALESCE(BR0.LINEID, BR1.LINEID)
+) BRSI
+       ON BRS.ID = BRSI.BUDGETREVERSEDID
+LEFT JOIN OAGWBG_V_EXT_OAGGL_DEPARTMENT_V DEPTV 
+       ON BRS.DEPARTMENTID = DEPTV.ID
+LEFT JOIN OAGWBG_V_EXT_OAGGL_COST_CENTER_V COSTV 
+       ON BRS.COSTCENTERID = COSTV.ID
+LEFT JOIN OAGWBG_V_SYSTEMUSER SU
+       ON BRS.CREATEBY = SU.ID
+LEFT JOIN TSV_RAW TSV
+ON (
+       BRSI.BUDGETRESERVEDTYPE IN ('R','EXPAND_PR')
+   AND BRSI.BOOKNUMBER = TSV.PR_NUMBER
+)
+OR (
+       BRSI.BUDGETRESERVEDTYPE IN ('O','EXPAND_PO')
+   AND BRSI.BOOKNUMBER = TSV.PO_NUMBER
+)
+LEFT JOIN OAGWBG_V_BUDGETRECEIVE BR
+ON BRSI.HEADERID = BR.ID
+WHERE
+     BRSI.STATUSID = 90102 OR   BRSI.STATUSID =90110 
+
+/
+
+PROMPT ============================================================
+PROMPT 4/5 : OAGWBG_R_BUDGETOVERLAP           (Template 3)
+PROMPT ============================================================
+CREATE OR REPLACE VIEW OAGWBG_R_BUDGETOVERLAP AS
+WITH TSV_RAW AS (
+    SELECT /*+ MATERIALIZE */
+           PR_STATUS, PR_BUDGET_ACCOUNT,
+           PO_STATUS, PO_BUDGET_ACCOUNT,
+           PO_NUMBER, PO_LINE_ID, PO_CONTRACT_DATE
+    FROM   APPS.OAGPO_TRANSACTION_STATUS_V
+)
+SELECT
+    BRS.ID AS BUDGETRESERVEDID,
+    COALESCE(CAT.BUDGETYEAR, BRSI.BUDGETYEAR, BRS.BUDGETYEAR) AS BUDGETYEAR,
+    BRS.TRANSFERNO,
+    BRS.RESERVATIONNAME,
+    BRS.RESERVATIONTYPE,
+    BRS.BUDGETRESERVEDTYPE,
+    BRS.REASON,
+    BRS.CREATEON AS RESERVEDDATE,
+    BRS.DEPARTMENTID,
+    DEPTV.NAME AS DEPARTMENTNAME,
+    BRS.COSTCENTERID,
+    COSTV.NAME AS COSTCENTERNAME,
+    COSTV.REGIONID,
+    BRS.BUDGETRESERVEDREGION,
+    BRSI.ID AS ITEMID,
+    BRSI.DESCRIPTION,
+    BRSI.SUPPLIER,
+    BRSI.BUDGETRESERVEDTYPE AS ITEMRESERVEDTYPE,
+    BRSI.TOTALHASPRAMOUNT AS PRAMOUNT,
+    BRSI.TOTALHASPOAMOUNT AS POAMOUNT,
+    CASE 
+        WHEN BUDGETRESERVEDREGION = 'C' THEN CAT.TOTALRESERVEDAMOUNT
+        ELSE BRSI.TOTALBALANCEAMOUNT
+    END AS TOTALBALANCEAMOUNT,
+    BRSI.REASON AS ITEMREASON,
+    CASE 
+        WHEN BRS.BUDGETRESERVEDREGION = 'C' OR BRS.BUDGETRESERVEDREGION = 'P'  THEN BRS.STATUSID
+        ELSE BRSI.STATUSID
+    END AS STATUSID,
+--    CASE 
+--        WHEN BRS.BUDGETRESERVEDREGION = 'C' OR BRS.BUDGETRESERVEDREGION = 'P' THEN BRS.STATUSNAME
+--        ELSE BRSI.STATUSNAME
+--    END AS STATUSNAME,
+    CASE
+            WHEN BRS.ROUNDINTERFACE = 1 THEN 'กันเงิน'
+            WHEN BRS.ROUNDINTERFACE > 1 THEN 'ขยายระยะเวลา'
+            ELSE 'ร่าง'
+    END AS STATUSNAME,
+    BRSI.CREATEON AS RESERVEDITEMDATE,
+    TO_CHAR(BRSI.CREATEON,'MM') AS RESERVEDMONTH,
+    BRSI.PO_CONTRACT,
+    BRSI.CONTRACT_CARRY_FORWARD_PO  AS PO_CONTRACT_DATE,
+    BRSI.PO_CONTRACT_START_DATE,
+    BRSI.PO_CONTRACT_DUE_DATE,
+    BRSI.BOOKNUMBER,
+    BRSI.COSTCENTERCODE,
+    BRSI.ACCOUNTCODE,
+    CASE 
+        WHEN BUDGETRESERVEDREGION = 'C' AND BRSI.ACCOUNTCODE IS NOT NULL THEN  REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 4)
+        WHEN BUDGETRESERVEDREGION = 'P' AND BRSI.ACCOUNTCODE IS NOT NULL THEN  REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 4)
+        ELSE BRS.BUDGETSOURCEID
+    END AS BUDGETSOURCEID,
+    REGEXP_SUBSTR(BRSI.ACCOUNTCODE, '[^.]+', 1, 9) AS BUDGETCODE,
+    CAT.CATEGORYID,
+    CAT.CATEGORYNAME,
+    CAT.CATEGORY_CODE,
+    CAT.TOTALRESERVEDAMOUNT,
+    CAT.BUDGETPLANID,
+    CAT.PLAN_NAME,
+    CAT.PRODUCTID,
+    CAT.PRODUCT_NAME,
+    CAT.ACTIVITYID,
+    CAT.ACTIVITY_NAME,
+    CAT.BUDGETCODEID,
+    CASE
+        WHEN BRSI.BUDGETRESERVEDTYPE = 'O' THEN 'มีหนี้'
+        WHEN BRSI.BUDGETRESERVEDTYPE = 'R' THEN 'ไม่มีหนี้'
+        WHEN BRSI.BUDGETRESERVEDTYPE = 'EXPAND_PO' THEN 'มีหนี้'
+        WHEN BRSI.BUDGETRESERVEDTYPE = 'EXPAND_PR' THEN 'ไม่มีหนี้'
+        ELSE 'ไม่ระบุ'
+    END AS RESERVEDTYPENAME,
+     CASE
+              WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 90102 THEN 'ขยายเวลา'
+              WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 90109 THEN 'ยกเลิก'
+              WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 90101 THEN 'ปกติ'
+               WHEN (CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID ELSE BRSI.STATUSID END) = 20202 THEN 'พิจารณาแล้ว'
+              ELSE 'อื่น ๆ'
+          END AS RESERVEDSTATUSNAME,
+    TSV.PR_STATUS,
+    TSV.PO_STATUS
+FROM OAGWBG_V_BUDGETRESERVED BRS 
+LEFT JOIN (
+    -- แทน OAGWBG_V_BUDGETRESERVEDITEM : อ่านตารางจริง + คำนวณ CONTRACT_CARRY_FORWARD_PO
+    -- ด้วย logic เดิมทุกตัวอักษร (อ้าง TSV_RAW แทน APPS.OAGPO_TRANSACTION_STATUS_V)
+    SELECT BR0.ID,
+           BR0.BUDGETREVERSEDID,
+           BR0.BUDGETYEAR,
+           BR0.DESCRIPTION,
+           BR0.SUPPLIER,
+           BR0.BUDGETRESERVEDTYPE,
+           BR0.TOTALHASPRAMOUNT,
+           BR0.TOTALHASPOAMOUNT,
+           BR0.TOTALBALANCEAMOUNT,
+           BR0.REASON,
+           BR0.STATUSID,
+           BR0.CREATEON,
+           BR0.PO_CONTRACT,
+           BR0.PO_CONTRACT_START_DATE,
+           BR0.PO_CONTRACT_DUE_DATE,
+           BR0.BOOKNUMBER,
+           BR0.COSTCENTERCODE,
+           BR0.ACCOUNTCODE,
+           CFPO.PO_CONTRACT_DATE            AS CONTRACT_CARRY_FORWARD_PO
+    FROM       OAGWBG_BUDGETRESERVEDITEM BR0
+    LEFT JOIN  OAGWBG_BUDGETRESERVEDITEM BR1 ON BR0.PARENTID = BR1.ID
+    LEFT JOIN  TSV_RAW CFPO
+           ON (
+                CFPO.PR_BUDGET_ACCOUNT = BR0.ACCOUNTCODE
+                OR (
+                    CFPO.PO_BUDGET_ACCOUNT = BR0.ACCOUNTCODE
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM   TSV_RAW X
+                        WHERE  X.PO_NUMBER  = BR0.BOOKNUMBER
+                          AND  X.PO_LINE_ID = COALESCE(BR0.LINEID, BR1.LINEID)
+                          AND  X.PR_BUDGET_ACCOUNT = BR0.ACCOUNTCODE
+                    )
+                )
+              )
+          AND CFPO.PO_NUMBER  = BR0.BOOKNUMBER
+          AND CFPO.PO_LINE_ID = COALESCE(BR0.LINEID, BR1.LINEID)
+) BRSI
+       ON BRS.ID = BRSI.BUDGETREVERSEDID
+LEFT JOIN OAGWBG_V_BUDGETRESERVED_CATEGORY CAT 
+       ON BRS.ID = CAT.BUDGETRESERVEDID
+LEFT JOIN OAGWBG_V_EXT_OAGGL_DEPARTMENT_V DEPTV 
+       ON BRS.DEPARTMENTID = DEPTV.ID
+LEFT JOIN OAGWBG_V_EXT_OAGGL_COST_CENTER_V COSTV 
+       ON BRS.COSTCENTERID = COSTV.ID
+LEFT JOIN (
+    SELECT PR_BUDGET_ACCOUNT, PO_BUDGET_ACCOUNT,
+           MAX(PR_STATUS) AS PR_STATUS,
+           MAX(PO_STATUS) AS PO_STATUS
+    FROM TSV_RAW
+    GROUP BY PR_BUDGET_ACCOUNT, PO_BUDGET_ACCOUNT
+) TSV ON BRSI.ACCOUNTCODE = TSV.PR_BUDGET_ACCOUNT
+     AND BRSI.ACCOUNTCODE = TSV.PO_BUDGET_ACCOUNT
+
+/
+
+PROMPT ============================================================
+PROMPT 5/5 : OAGWBG_R_BUDGETOVERLAP_RESERVED  (Template 4)
+PROMPT ============================================================
+CREATE OR REPLACE VIEW OAGWBG_R_BUDGETOVERLAP_RESERVED AS
+WITH TSV_RAW AS (
+    SELECT /*+ MATERIALIZE */
+           PR_NUMBER, PR_TRANSFER_NO, PR_BUDGET_ACCOUNT,
+           PO_NUMBER, PO_TRANSFER_NO, PO_BUDGET_ACCOUNT
+    FROM   APPS.OAGPO_TRANSACTION_STATUS_V
+)
+SELECT
+    -- ===== ระดับหัวกันเงิน (group) =====
+    BRS.ID                                   AS BUDGETRESERVEDID,
+    BRSI.BUDGETYEAR                           AS BUDGETYEAR,
+    BRS.TRANSFERNO                           AS TRANSFERNO,            -- เลขที่กันเงิน (หัวกลุ่มรายงาน)
+    BRS.RESERVATIONNAME                      AS RESERVATIONNAME,
+    BRS.RESERVATIONTYPE                      AS RESERVATIONTYPE,
+    BRS.BUDGETRESERVEDREGION                 AS BUDGETRESERVEDREGION,
+
+    -- ===== เลขที่โอนจัดสรร (?? ดูข้อ 7.1) =====
+    COALESCE(BRSI.PO_TRANSFER_NO, BRSI.PR_TRANSFER_NO, BRSI.TRANSFERNO) AS ALLOCATE_TRANSFERNO,
+
+    -- ===== พื้นที่ภาค / สำนักงาน (จากศูนย์ต้นทุน) =====
+    COSTV.REGIONID                           AS REGIONID,
+    COSTV.REGIONNAME                         AS REGIONNAME,            -- พื้นที่ ภาค
+    BRS.COSTCENTERID                         AS COSTCENTERID,
+    COSTV.NAME                               AS COSTCENTERNAME,        -- สำนักงาน
+    BRS.DEPARTMENTID                         AS DEPARTMENTID,
+    DEPTV.NAME                               AS DEPARTMENTNAME,
+
+    -- ===== รายการ (หมวด) =====
+    CAT.CATEGORYID                           AS CATEGORYID,
+    CAT.CATEGORYNAME                         AS CATEGORYNAME,          -- รายการ (ตาม prompt)
+    CAT.CATEGORY_CODE                        AS CATEGORY_CODE,
+    CAT.TOTALRESERVEDAMOUNT                  AS TOTALRESERVEDAMOUNT,   -- ยอดกันเงินรวมของหมวด
+
+    -- ===== ระดับรายการ (item) =====
+    BRSI.ID                                  AS ITEMID,
+    BRSI.DESCRIPTION                         AS DESCRIPTION,           -- ชื่อรายการระดับ item (ที่ PDF โชว์ในบรรทัดย่อย)
+    BRSI.SUPPLIER                            AS SUPPLIER,
+    BRSI.BOOKNUMBER                          AS BOOKNUMBER,            -- เลขที่เอกสาร
+    BRSI.ACCOUNTCODE                         AS ACCOUNTCODE,
+    BRSI.BUDGETRESERVEDTYPE                  AS ITEMRESERVEDTYPE,      -- O/R/EXPAND_*/CANCEL_*
+    BRSI.TOTALBALANCEAMOUNT                  AS TOTALBALANCEAMOUNT,    -- จำนวนเงินจัดสรร
+    BRSI.USAGEAMOUNT                         AS USAGEAMOUNT,           -- ยอดที่ใช้ (raw)
+    BRSI.RESERVEDNO_ADD                      AS RESERVEDNO_ADD,        -- เลขที่เงินกันเพิ่ม .n
+    BRSI.NOTE                                AS NOTE,                  -- หมายเหตุ
+    BRSI.OVERLAPYEAR                         AS OVERLAPYEAR,
+    BRSI.OVERLAPROUND                        AS OVERLAPROUND,
+    BRSI.CREATEON                            AS RESERVEDITEMDATE,
+
+    -- ===== pivot ยอดตามประเภท (คอลัมน์รายงานตรง ๆ) =====
+    CASE WHEN BRSI.BUDGETRESERVEDTYPE = 'EXPAND_PO' THEN BRSI.USAGEAMOUNT END AS APPROVE_EXPAND_HASOBLIGATION,  -- อนุมัติขยาย: มีหนี้
+    CASE WHEN BRSI.BUDGETRESERVEDTYPE = 'EXPAND_PR' THEN BRSI.USAGEAMOUNT END AS APPROVE_EXPAND_NOOBLIGATION,   -- อนุมัติขยาย: ไม่มีหนี้
+    CASE WHEN BRSI.BUDGETRESERVEDTYPE = 'CANCEL_PO' THEN BRSI.USAGEAMOUNT END AS PROCESS_HASOBLIGATION,         -- ดำเนินการ: มีหนี้
+    CASE WHEN BRSI.BUDGETRESERVEDTYPE = 'CANCEL_PR' THEN BRSI.USAGEAMOUNT END AS PROCESS_NOOBLIGATION,          -- ดำเนินการ: ไม่มีหนี้
+
+    -- ===== แปลประเภท / สถานะ (สไตล์เดียวกับวิวเดิม) =====
+    CASE
+        WHEN BRSI.BUDGETRESERVEDTYPE IN ('O','EXPAND_PO','CANCEL_PO') THEN 'มีหนี้'
+        WHEN BRSI.BUDGETRESERVEDTYPE IN ('R','EXPAND_PR','CANCEL_PR') THEN 'ไม่มีหนี้'
+        ELSE 'ไม่ระบุ'
+    END                                      AS RESERVEDTYPENAME,
+    CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSID   ELSE BRSI.STATUSID   END AS STATUSID,
+    CASE WHEN BRS.BUDGETRESERVEDREGION = 'C' THEN BRS.STATUSNAME ELSE BRSI.STATUSNAME END AS STATUSNAME
+FROM       OAGWBG_V_BUDGETRESERVED           BRS
+LEFT JOIN (
+    -- แทน OAGWBG_V_BUDGETRESERVEDITEM : เอาเฉพาะ join ที่ view นี้ใช้จริง
+    -- (ตัด CFPO / BANKACCOUNT / BS ทิ้ง — ไม่ได้ใช้)
+    SELECT BR0.ID,
+           BR0.BUDGETREVERSEDID,
+           BR0.BUDGETYEAR,
+           BR0.DESCRIPTION,
+           BR0.SUPPLIER,
+           BR0.BUDGETRESERVEDTYPE,
+           BR0.TOTALBALANCEAMOUNT,
+           BR0.STATUSID,
+           CASE
+               WHEN MS.NAME LIKE '%บันทึก%' THEN 'ส่งเรื่องให้พิจารณา'
+               ELSE MS.NAME
+           END                              AS STATUSNAME,
+           BR0.CREATEON,
+           BR0.ACCOUNTCODE,
+           BR0.BOOKNUMBER,
+           BR0.NOTE,
+           BR0.OVERLAPROUND,
+           BR0.OVERLAPYEAR,
+           BR0.RESERVEDNO_ADD,
+           BR0.TRANSFERNO,
+           BR0.USAGEAMOUNT,
+           ovbr.PR_TRANSFER_NO              AS PR_TRANSFER_NO,
+           ovbo.PO_TRANSFER_NO              AS PO_TRANSFER_NO
+    FROM       OAGWBG_BUDGETRESERVEDITEM BR0
+    LEFT JOIN  OAGWBG_MASTERSTATUS MS ON MS.ID = BR0.STATUSID
+    LEFT JOIN  (SELECT * FROM TSV_RAW a WHERE a.PR_TRANSFER_NO IS NOT NULL) ovbr
+           ON  ovbr.PR_BUDGET_ACCOUNT = BR0.ACCOUNTCODE AND BR0.BOOKNUMBER = ovbr.PR_NUMBER
+    LEFT JOIN  (SELECT * FROM TSV_RAW b WHERE b.PO_TRANSFER_NO IS NOT NULL) ovbo
+           ON  ovbo.PO_BUDGET_ACCOUNT = BR0.ACCOUNTCODE AND BR0.BOOKNUMBER = ovbo.PO_NUMBER
+)                                            BRSI  ON BRS.ID = BRSI.BUDGETREVERSEDID AND (BRSI.PO_TRANSFER_NO IS NOT NULL OR BRSI.PR_TRANSFER_NO IS NOT NULL)
+LEFT JOIN  OAGWBG_V_BUDGETRESERVED_CATEGORY  CAT   ON BRS.ID = CAT.BUDGETRESERVEDID   -- ?? ดูข้อ 7.2 (1 หมวด/หัว)
+LEFT JOIN  OAGWBG_V_EXT_OAGGL_DEPARTMENT_V   DEPTV ON BRS.DEPARTMENTID = DEPTV.ID
+LEFT JOIN  OAGWBG_V_EXT_OAGGL_COST_CENTER_V  COSTV ON BRS.COSTCENTERID = COSTV.ID
+WHERE  BRSI.BUDGETRESERVEDTYPE IN ('EXPAND_PO','EXPAND_PR','CANCEL_PO','CANCEL_PR')  
+
+
+/
+
+PROMPT ============================================================
+PROMPT ตรวจผลลัพธ์
+PROMPT ============================================================
+
+-- ทุกตัวต้องเป็น VALID
+SELECT OBJECT_NAME, STATUS
+FROM   USER_OBJECTS
+WHERE  OBJECT_NAME IN ('OAGWBG_V_BUDGETRESERVEDITEM',
+                       'OAGWBG_R_BUDGETOVERLAP_CATEGORY',
+                       'OAGWBG_R_BUDGETOVERLAP_EXPAND',
+                       'OAGWBG_R_BUDGETOVERLAP',
+                       'OAGWBG_R_BUDGETOVERLAP_RESERVED')
+ORDER BY OBJECT_NAME;
+
+-- จำนวนคอลัมน์ต้องเท่าเดิม : V_BUDGETRESERVEDITEM=41, _CATEGORY=50, _EXPAND=45, _BUDGETOVERLAP=50, _RESERVED=37
+SELECT TABLE_NAME, COUNT(*) AS COLS
+FROM   USER_TAB_COLUMNS
+WHERE  TABLE_NAME IN ('OAGWBG_V_BUDGETRESERVEDITEM',
+                      'OAGWBG_R_BUDGETOVERLAP_CATEGORY',
+                      'OAGWBG_R_BUDGETOVERLAP_EXPAND',
+                      'OAGWBG_R_BUDGETOVERLAP',
+                      'OAGWBG_R_BUDGETOVERLAP_RESERVED')
+GROUP BY TABLE_NAME
+ORDER BY TABLE_NAME;
