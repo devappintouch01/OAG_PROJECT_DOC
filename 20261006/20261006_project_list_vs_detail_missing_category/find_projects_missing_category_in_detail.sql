@@ -1,0 +1,179 @@
+-- หาโครงการ (ฟอร์ม 2) ที่หน้า BudgetRequestSummaryProjectList แสดง "รายการงบประมาณ"
+-- แต่หน้า BudgetRequestProjectDetail (ลิงก์ pageType=3) ช่อง "รายการ" ไม่มี option ไหนถูกเลือก
+--
+-- หน้า list  : GetBudgetRequestSummaryProjectList (BudgetService.cs:9156)
+--              แถวจาก OAGWBG_V_BUDGETREQUESTSUMMARY → ยุบ temp copy ด้วย (BUDGETREQUESTID, RUNNING, ชื่อโครงการ)
+--              แล้วเอาชื่อรายการจาก CATEGORY_ID ของแถว (DUMMY_CATEGORY ก่อน ไม่มีค่อยใช้ CATEGORYID)
+-- หน้า detail: option ถูกเลือกเมื่อ option.BG = REF_BUDGETGOVERNMENTID ของแถว BUDGETGOVERNMENT ที่ PROJECTID = โครงการ
+--              option มาจาก GetProjectCategoryType (BudgetService.cs:1138)
+--              ลิงก์จากหน้า list ไม่ส่ง CostCenterId / BudgetFormRequestType → ไม่กรองศูนย์ต้นทุน
+--   REF ต้องผ่านครบทุกข้อ (REASON บอกข้อแรกที่ไม่ผ่าน):
+--     1. REF ไม่ว่าง
+--     2. มีแถวใน OAGWBG_V_BUDGETGOVERNMENT ที่ ID = REF และ CATEGORYTYPEID = '2'
+--     3. BUDGETREQUESTID ของแถวนั้นเป็นใบล่าสุด (ไม่มีใบไหน PARENTID ชี้มา)
+--     4. BUDGETYEAR ตรงกับปีของโครงการ (OAGWBG_V_PROJECT)
+--     5. ถ้าแถวโครงการมี PRODUCTID → PRODUCTID ต้องตรง และถ้ามี ACTIVITYCODEID → ACTIVITYCODEID ต้องตรง
+--     6. REF ไม่ถูกโครงการอื่นจองไว้ (chosenRefGovIdsList : โครงการต้นฉบับในคำขอใบล่าสุด
+--        อ้างผ่าน OAGWBG_PROJECT.BUDGETGOVERNMENTID ไม่ใช่ BUDGETGOVERNMENT.PROJECTID)
+--
+-- ข้อจำกัด: C# หาแถวโครงการด้วย FirstOrDefault ไม่มี ORDER BY — ถ้า BG_ROWS > 1 query นี้ใช้ ID ต่ำสุด
+--           ซึ่งอาจไม่ใช่แถวเดียวกับที่หน้าเว็บหยิบ
+--
+-- ใช้: แทน :BUDGETYEAR ด้วยปี พ.ศ. เช่น 2569
+
+WITH
+P_META AS (
+  SELECT ID, TEMP, RUNNING, BUDGETREQUESTID
+  FROM OAGWBG_PROJECT
+  WHERE BUDGETYEAR = :BUDGETYEAR
+),
+
+LIST_RAW AS (
+  SELECT
+    S.PROJECTID,
+    S.CATEGORY_ID,
+    S.CATEGORY_NAME AS PROJECTNAME,   -- ฟอร์ม 2 view คืนชื่อโครงการใน CATEGORY_NAME
+    CASE
+      WHEN M.RUNNING IS NOT NULL
+        THEN 'br:' || M.BUDGETREQUESTID || '|run:' || M.RUNNING || '|nm:' || TRIM(S.CATEGORY_NAME)
+      ELSE 'pid:' || S.PROJECTID
+    END AS LKEY,
+    CASE WHEN M.TEMP IS NOT NULL THEN 1 ELSE 0 END AS IS_COPY
+  FROM OAGWBG_V_BUDGETREQUESTSUMMARY S
+  LEFT JOIN P_META M ON M.ID = S.PROJECTID
+  WHERE S.BUDGETYEAR       = :BUDGETYEAR
+    AND S.BUDGETFORMTYPEID = '2'
+    AND S.PROJECTID IS NOT NULL
+),
+
+-- แถวที่หน้า list แสดงจริง และมีชื่อรายการ (ไม่ใช่ "-")
+LIST_OK AS (
+  SELECT R.PROJECTID, R.PROJECTNAME, R.CATEGORY_ID, CC.CODE AS LIST_CATEGORY_CODE, CC.NAME AS LIST_CATEGORY_NAME
+  FROM (
+    SELECT L.*, ROW_NUMBER() OVER (PARTITION BY L.LKEY ORDER BY L.IS_COPY, L.PROJECTID DESC) AS RN
+    FROM LIST_RAW L
+  ) R
+  JOIN (
+    SELECT ID, MAX(CODE) AS CODE, MAX(NAME) AS NAME
+    FROM OAGWBG_V_EXT_OAGINV_CATEGORY_CODES_V
+    GROUP BY ID
+  ) CC ON CC.ID = R.CATEGORY_ID
+  WHERE R.RN = 1
+    AND NVL(R.CATEGORY_ID, 0) <> 0
+    AND TRIM(CC.NAME) IS NOT NULL
+),
+
+BG_PJ AS (
+  SELECT PROJECTID, MIN(ID) AS BG_ID, COUNT(*) AS BG_ROWS
+  FROM OAGWBG_BUDGETGOVERNMENT
+  WHERE PROJECTID IN (SELECT PROJECTID FROM LIST_OK)
+  GROUP BY PROJECTID
+),
+
+VP AS (
+  SELECT ID, MAX(BUDGETYEAR) AS BUDGETYEAR
+  FROM OAGWBG_V_PROJECT
+  WHERE ID IN (SELECT PROJECTID FROM LIST_OK)
+  GROUP BY ID
+),
+
+DTL AS (
+  SELECT
+    L.PROJECTID, L.PROJECTNAME, L.CATEGORY_ID, L.LIST_CATEGORY_CODE, L.LIST_CATEGORY_NAME,
+    VP.ID                               AS VP_ID,
+    NVL(VP.BUDGETYEAR, EXTRACT(YEAR FROM SYSDATE)) AS PROJECT_YEAR,
+    B.BG_ID, B.BG_ROWS,
+    BG.REF_BUDGETGOVERNMENTID           AS REF_ID,
+    BG.PRODUCTID, BG.ACTIVITYCODEID,
+    PJBG.REF_BUDGETGOVERNMENTID         AS CUR_REF_ID   -- currentRefGovId (ผ่าน OAGWBG_PROJECT.BUDGETGOVERNMENTID)
+  FROM LIST_OK L
+  LEFT JOIN VP                         ON VP.ID   = L.PROJECTID
+  LEFT JOIN BG_PJ B                    ON B.PROJECTID = L.PROJECTID
+  LEFT JOIN OAGWBG_BUDGETGOVERNMENT BG ON BG.ID   = B.BG_ID
+  LEFT JOIN OAGWBG_PROJECT PJ          ON PJ.ID   = L.PROJECTID
+  LEFT JOIN OAGWBG_BUDGETGOVERNMENT PJBG ON PJBG.ID = PJ.BUDGETGOVERNMENTID
+),
+
+LEAF_BR AS (
+  SELECT X.ID
+  FROM OAGWBG_BUDGETREQUEST X
+  WHERE NOT EXISTS (SELECT 1 FROM OAGWBG_BUDGETREQUEST G WHERE G.PARENTID = X.ID)
+),
+
+-- ไล่ข้อ 2-5 ต่อแถวของ REF ใน view แล้วเก็บข้อที่ไปได้ไกลที่สุด (6 = ผ่านข้อ 2-5 ครบ)
+STAGE AS (
+  SELECT PROJECTID, MAX(STAGE) AS STAGE
+  FROM (
+    SELECT
+      D.PROJECTID,
+      CASE
+        WHEN NVL(V.CATEGORYTYPEID, '-') <> '2'                     THEN 1
+        WHEN LB.ID IS NULL                                         THEN 2
+        WHEN NVL(V.BUDGETYEAR, -1) <> D.PROJECT_YEAR               THEN 3
+        WHEN D.PRODUCTID IS NOT NULL
+         AND NVL(V.PRODUCTID, -1) <> D.PRODUCTID                   THEN 4
+        WHEN D.PRODUCTID IS NOT NULL AND D.ACTIVITYCODEID IS NOT NULL
+         AND NVL(V.ACTIVITYCODEID, -1) <> D.ACTIVITYCODEID         THEN 5
+        ELSE 6
+      END AS STAGE
+    FROM DTL D
+    JOIN OAGWBG_V_BUDGETGOVERNMENT V ON V.ID = D.REF_ID
+    LEFT JOIN LEAF_BR LB             ON LB.ID = V.BUDGETREQUESTID
+  )
+  GROUP BY PROJECTID
+),
+
+-- โครงการต้นฉบับในคำขอใบล่าสุด ที่จอง REF ไว้ (ก่อนตัด currentRefGovId)
+TAKEN AS (
+  SELECT BG2.REF_BUDGETGOVERNMENTID AS REF_ID, P2.ID AS TAKEN_BY_PROJECTID
+  FROM OAGWBG_PROJECT P2
+  JOIN OAGWBG_BUDGETGOVERNMENT BG2 ON BG2.ID = P2.BUDGETGOVERNMENTID
+  WHERE BG2.REF_BUDGETGOVERNMENTID IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM OAGWBG_PROJECT X        WHERE X.ID       = P2.TEMP)
+    AND NOT EXISTS (SELECT 1 FROM OAGWBG_BUDGETREQUEST R  WHERE R.PARENTID = P2.BUDGETREQUESTID)
+),
+
+RESULT AS (
+  SELECT
+    D.*,
+    S.STAGE,
+    (SELECT LISTAGG(T.TAKEN_BY_PROJECTID, ',') WITHIN GROUP (ORDER BY T.TAKEN_BY_PROJECTID)
+       FROM TAKEN T
+      WHERE T.REF_ID = D.REF_ID
+        AND T.TAKEN_BY_PROJECTID <> D.PROJECTID)   AS REF_TAKEN_BY,
+    CASE
+      WHEN D.VP_ID IS NULL         THEN '0. ไม่มีใน OAGWBG_V_PROJECT (หน้า detail จะ error)'
+      WHEN D.BG_ID IS NULL         THEN '0. ไม่มีแถว BUDGETGOVERNMENT ที่ PROJECTID = โครงการ (หน้า detail จะ error)'
+      WHEN NVL(D.REF_ID, 0) = 0    THEN '1. REF_BUDGETGOVERNMENTID ว่าง'
+      WHEN S.STAGE IS NULL         THEN '2. REF ไม่อยู่ใน OAGWBG_V_BUDGETGOVERNMENT'
+      WHEN S.STAGE = 1             THEN '2. CATEGORYTYPEID ของ REF ไม่ใช่ 2'
+      WHEN S.STAGE = 2             THEN '3. REF อยู่ในคำขอใบเก่า (มีใบใหม่ PARENTID ชี้มาแล้ว)'
+      WHEN S.STAGE = 3             THEN '4. ปีของ REF ไม่ตรงกับปีโครงการ'
+      WHEN S.STAGE = 4             THEN '5. PRODUCTID ของ REF ไม่ตรงกับแถวโครงการ'
+      WHEN S.STAGE = 5             THEN '5. ACTIVITYCODEID ของ REF ไม่ตรงกับแถวโครงการ'
+      WHEN EXISTS (SELECT 1 FROM TAKEN T WHERE T.REF_ID = D.REF_ID)
+       AND (D.CUR_REF_ID IS NULL OR D.CUR_REF_ID <> D.REF_ID)
+                                   THEN '6. REF ถูกโครงการอื่นจองไว้ (ดู REF_TAKEN_BY)'
+    END AS REASON
+  FROM DTL D
+  LEFT JOIN STAGE S ON S.PROJECTID = D.PROJECTID
+)
+
+SELECT
+  PROJECTID,
+  PROJECTNAME,
+  PROJECT_YEAR,
+  CATEGORY_ID        AS LIST_CATEGORY_ID,
+  LIST_CATEGORY_CODE,
+  LIST_CATEGORY_NAME,
+  BG_ID,
+  BG_ROWS,
+  REF_ID,
+  CUR_REF_ID,
+  PRODUCTID,
+  ACTIVITYCODEID,
+  REF_TAKEN_BY,
+  REASON
+FROM RESULT
+WHERE REASON IS NOT NULL
+ORDER BY REASON, PROJECTID;

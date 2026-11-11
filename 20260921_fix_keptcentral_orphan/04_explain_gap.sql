@@ -1,0 +1,113 @@
+--------------------------------------------------------------------------------
+-- STEP 4 : อธิบายส่วนต่าง TABLE vs VIEW ทีละบาท
+-- READ-ONLY ล้วน
+--
+-- จัดกลุ่มแถว type-4 ทุกแถวว่า "ยอดของมันขึ้นจอหรือไม่ และถ้าไม่ เพราะอะไร"
+--
+-- สมการที่ต้องลงตัว :
+--     SUM(TABLE) − SUM(VIEW)  =  ผลรวมของทุก REASON ที่ไม่ใช่ 0a / 0b
+--
+-- ผลจาก PROD 2026-09-22 (ที่ต้องอธิบายให้ได้) :
+--     ปี 2569  TABLE 2,597,068,340.67  VIEW 2,597,568,340.67  →  −500,000
+--     ปี 2570  TABLE 5,608,560,323.16  VIEW 5,608,440,579.16  →  +119,744
+--     ปี 2571  TABLE 0                 VIEW 0                 →   0
+--
+-- ตรวจบน PREPROD แล้ว อธิบายปี 2569 ได้ครบ :
+--     0a_ถึงจอ ผ่าน BG4        876 แถว  2,597,568,340.67
+--     2_ถูกแทนที่              14 แถว    −500,000          ← อธิบายส่วนต่างพอดี
+--     1_REF ไม่มีแถว BG          3 แถว    0
+--     10_ไม่มีแถวลูก RUNNING ตรง  2 แถว    0
+--
+-- ความหมายของแต่ละ REASON :
+--   0a  ยอดขึ้นจอปกติ ผ่าน BG4 (แถวมีค่าของตัวเอง)
+--   0b  ยอดขึ้นจอผ่าน fallback (ยืมจากคำขอแม่)
+--   1   REF ชี้ไป BG ที่ถูกลบไปแล้ว           → กู้ไม่ได้ ต้องดูว่ายอดเป็น 0 ไหม
+--   2   คำขอลูกกรอกค่าใหม่ทับแล้ว             → ★ ปกติ ไม่ใช่บั๊ก ยอดเก่าถูกแทนที่โดยตั้งใจ
+--   3-8 BG ต้นทางถูกกรองด้วยเงื่อนไขอื่นของ view
+--   9   RUNNING ซ้ำในคำขอแม่ → guard HAVING COUNT(*)=1 กรองทิ้ง
+--   10  ไม่มี BG ในคำขอลูกที่ RUNNING ตรงกัน (เช่น ผู้ใช้ลบรายการนั้นทิ้งหลัง clone)
+--------------------------------------------------------------------------------
+
+WITH VISIBLE_BG AS (
+  SELECT BG.ID, BG.RUNNING, BG.BUDGETREQUESTID, BR.PARENTID
+  FROM OAGWBG_BUDGETREQUEST BR
+  JOIN OAGWBG_BUDGETGOVERNMENT BG ON BG.BUDGETREQUESTID = BR.ID
+       AND BG.BUDGETFORMTYPEID IN (1,2) AND BG.ID IS NOT NULL
+       AND (BG.BUDGETGOVERNMENTTYPE IS NULL OR BG.BUDGETGOVERNMENTTYPE = '7')
+       AND BG.BUDGETSTATUS NOT IN ('A','X')
+  WHERE BR.BUDGETTYPEID = 1
+  AND NOT EXISTS (SELECT 1 FROM OAGWBG_BUDGETREQUEST B2
+                  WHERE B2.PARENTID IS NOT NULL AND B2.PARENTID = BG.BUDGETREQUESTID)
+  AND (BG.PROJECTID IS NULL OR NOT EXISTS (
+       SELECT 1 FROM OAGWBG_PROJECT WHERE TEMP IS NOT NULL AND TEMP = BG.PROJECTID))
+),
+OWN_KEPT AS (
+  SELECT REF_BUDGETGOVERNMENTID REF, SUM(KEPTCENTRAL) K
+  FROM OAGWBG_BUDGETGOVERNMENT WHERE BUDGETGOVERNMENTTYPE = '4'
+  GROUP BY REF_BUDGETGOVERNMENTID
+),
+PARENT_SLOT AS (
+  SELECT PBG.BUDGETREQUESTID PARENT_REQID, PBG.RUNNING
+  FROM OAGWBG_BUDGETGOVERNMENT PBG
+  JOIN OAGWBG_BUDGETGOVERNMENT B4 ON B4.REF_BUDGETGOVERNMENTID = PBG.ID AND B4.BUDGETGOVERNMENTTYPE='4'
+  WHERE PBG.RUNNING IS NOT NULL
+  GROUP BY PBG.BUDGETREQUESTID, PBG.RUNNING HAVING COUNT(*) = 1
+),
+REACHED_PARENT_BG AS (
+  SELECT DISTINCT PBG.ID AS BG_ID
+  FROM VISIBLE_BG V
+  JOIN OAGWBG_BUDGETGOVERNMENT PBG ON PBG.BUDGETREQUESTID = V.PARENTID AND PBG.RUNNING = V.RUNNING
+  JOIN PARENT_SLOT PK ON PK.PARENT_REQID = V.PARENTID AND PK.RUNNING = V.RUNNING
+  LEFT JOIN OWN_KEPT OK ON OK.REF = V.ID
+  WHERE OK.K IS NULL
+),
+CHILD_HAS_OWN AS (
+  SELECT DISTINCT BRP.PARENTID AS PARENT_REQID, VB.RUNNING
+  FROM VISIBLE_BG VB
+  JOIN OAGWBG_BUDGETREQUEST BRP ON BRP.ID = VB.BUDGETREQUESTID AND BRP.PARENTID IS NOT NULL
+  JOIN OWN_KEPT OK2 ON OK2.REF = VB.ID AND OK2.K IS NOT NULL
+),
+CLS AS (
+  SELECT T.BUDGETYEAR, T.ID T_ID, T.KEPTCENTRAL, T.REF_BUDGETGOVERNMENTID,
+         BG.BUDGETREQUESTID BG_REQ, BG.RUNNING BG_RUNNING, BG.CATEGORYID,
+    CASE
+      WHEN V.ID  IS NOT NULL THEN '0a_ถึงจอ ผ่าน BG4 (ของตัวเอง)'
+      WHEN RP.BG_ID IS NOT NULL THEN '0b_ถึงจอ ผ่าน BG4P (fallback)'
+      WHEN BG.ID IS NULL THEN '1_REF ไม่มีแถว BG (ถูกลบ)'
+      WHEN CHO.PARENT_REQID IS NOT NULL THEN '2_ถูกแทนที่ ลูกมีค่าของตัวเองแล้ว'
+      WHEN BG.BUDGETSTATUS IN ('A','X') THEN '3_BUDGETSTATUS A/X'
+      WHEN BG.BUDGETFORMTYPEID NOT IN (1,2) THEN '4_formtype ไม่ใช่ 1,2'
+      WHEN NOT (BG.BUDGETGOVERNMENTTYPE IS NULL OR BG.BUDGETGOVERNMENTTYPE='7') THEN '5_BG type ไม่ใช่ null/7'
+      WHEN BR.ID IS NULL THEN '6_ไม่มี BUDGETREQUEST'
+      WHEN BR.BUDGETTYPEID <> 1 THEN '7_BUDGETTYPEID <> 1'
+      WHEN BG.RUNNING IS NULL THEN '8_RUNNING เป็น NULL'
+      WHEN PS.PARENT_REQID IS NULL THEN '9_RUNNING ซ้ำในคำขอแม่ (guard กรอง)'
+      ELSE '10_ไม่มีแถวลูกที่ RUNNING ตรงกัน'
+    END REASON
+  FROM OAGWBG_BUDGETGOVERNMENT T
+  LEFT JOIN OAGWBG_BUDGETGOVERNMENT BG ON BG.ID = T.REF_BUDGETGOVERNMENTID
+  LEFT JOIN OAGWBG_BUDGETREQUEST    BR ON BR.ID = BG.BUDGETREQUESTID
+  LEFT JOIN VISIBLE_BG        V  ON V.ID     = T.REF_BUDGETGOVERNMENTID
+  LEFT JOIN REACHED_PARENT_BG RP ON RP.BG_ID = T.REF_BUDGETGOVERNMENTID
+  LEFT JOIN CHILD_HAS_OWN    CHO ON CHO.PARENT_REQID = BG.BUDGETREQUESTID AND CHO.RUNNING = BG.RUNNING
+  LEFT JOIN PARENT_SLOT       PS ON PS.PARENT_REQID  = BG.BUDGETREQUESTID AND PS.RUNNING  = BG.RUNNING
+  WHERE T.BUDGETGOVERNMENTTYPE = '4'
+)
+-- [G1] สรุปตามสาเหตุ
+SELECT BUDGETYEAR, REASON, COUNT(*) N_ROWS, SUM(NVL(KEPTCENTRAL,0)) SUM_KEPT
+FROM   CLS
+GROUP  BY BUDGETYEAR, REASON
+ORDER  BY 1, 2;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- [G2] เจาะรายแถวของปี 2570 ที่ยอด "ไม่ถึงจอ" และไม่ใช่ศูนย์
+--      ผลรวมต้องเท่ากับ 119,744
+--      (copy WITH ... CLS ข้างบนมาวาง แล้วต่อด้วยคำสั่งนี้)
+-- ════════════════════════════════════════════════════════════════════
+-- SELECT T_ID, KEPTCENTRAL, REF_BUDGETGOVERNMENTID, BG_REQ, BG_RUNNING, CATEGORYID, REASON
+-- FROM   CLS
+-- WHERE  BUDGETYEAR = 2570
+-- AND    REASON NOT LIKE '0%'
+-- AND    NVL(KEPTCENTRAL,0) <> 0
+-- ORDER  BY REASON, ABS(KEPTCENTRAL) DESC;

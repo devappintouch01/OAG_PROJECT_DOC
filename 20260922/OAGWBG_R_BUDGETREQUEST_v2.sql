@@ -1,0 +1,209 @@
+--------------------------------------------------------------------------------
+-- OAGWBG_R_BUDGETREQUEST  v2  (2026-09-22)
+--
+-- ใช้ตรรกะเดียวกับ OAGWBG_V_BUDGETREQUESTSUMMARY_v2 :
+--   "คำของบประมาณเพิ่มเติม" (REQUESTAMOUNT_ADD) เป็นเงินก้อนเดียวต่อกลุ่มรายการ
+--   → ต้องโผล่แค่แถวเดียวต่อกลุ่ม แถวอื่นเป็น 0
+--
+-- v1 : NVL(COALESCE(BG4.KEPTCENTRAL, BG4P.KEPTCENTRAL), 0)  ← ทุกแถวที่ join ติด
+-- v2 : คิด KEPT_FINAL ด้วย analytic ให้เหลือแถวเดียวต่อกลุ่ม
+--
+-- ตรวจบน PREPROD แล้ว : ROWS_ 9,649 / 12,894 / 2  และ SUM_ADD เท่ากับ v1 ทุกปี
+--
+-- ⚠️ ข้อจำกัดที่ยังค้าง (ต้องถามเจ้าของระบบ)
+--    รายงานนี้ออกผล "รายศูนย์ต้นทุน" (COSTCENTERID / COSTCENTERNAME)
+--    แต่ยอดเพิ่มเติมเป็นก้อนของ "กลุ่มรายการ" ไม่ได้เป็นของศูนย์ต้นทุนใด
+--    v2 จะให้ยอดนี้โผล่ที่แถวของศูนย์ต้นทุนแรกในกลุ่ม (เรียงตาม BG.ID)
+--    ซึ่งทำให้ยอดรวมทั้งรายงานถูกต้อง แต่ยอด "รายศูนย์ต้นทุน" ยังอ่านตรง ๆ ไม่ได้
+--    ทางเลือกที่ต้องตัดสินใจ : แถวแยก "ส่วนกลาง" / เฉลี่ยตามสัดส่วน / ไม่แสดงในระดับศูนย์
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE FORCE EDITIONABLE VIEW "OAGWBG"."OAGWBG_R_BUDGETREQUEST"
+    ("BUDGETYEAR", "DEPARTMENTID", "DEPARTMENTNAME", "COSTCENTERID", "COSTCENTERNAME",
+     "REGIONID", "REGIONNAME", "CODE", "CATEGORYID", "CATEGORYNAME", "BUDGETPLANID_ORIG",
+     "PLANID", "ACTIVITYID", "PRODUCTID", "PLANNAME", "ACTIVITYNAME", "PRODUCTNAME",
+     "EXPENSETYPENAME", "EXPENSETYPEID", "BUDGETEXPENSETYPENAME", "BUDGETEXPENSETYPEID",
+     "CREATEON", "CREATEBY", "DUMMY_FLAG", "REQUESTAMOUNT", "REQUESTAMOUNT_ADD",
+     "BUDGETDETAIL", "BUDGETDETAILREQUEST", "BUDGET_EXPENSE_TYPE_ID", "BUDGETSTATUS") AS
+  WITH LatestBG AS (
+    SELECT *
+    FROM (
+        SELECT
+            BG.ID,
+            BG.BUDGETREQUESTID,
+            BG.RUNNING,
+            BG.CREATEON,
+            BG.CREATEBY,
+            BG.BUDGETYEAR,
+            BG.BUDGETFORMTYPEID,
+            CC.CODE,
+            CASE
+                    WHEN NVL(BG.DUMMY_CATEGORY, 0) <> 0 THEN BG.DUMMY_CATEGORY
+                    ELSE BG.CATEGORYID
+            END AS CATEGORYID,
+            CC.DUMMY_FLAG,
+            BG.PRODUCTID,
+            BG.ACTIVITYCODEID,
+            BG.PROJECTID,
+            BG.BUDGETPLANID,
+            BG.EXPENSETYPEID,
+            CC.BUDGET_TYPE_ID AS BUDGETEXPENSETYPEID,
+            BG.BUDGETDETAIL,
+            BG.KEPTCENTRAL,
+            BG.TOTALREQUESTAMOUNT,
+            BG.COSTCENTERID,
+            BG.EXPENSETYPENAME,
+                    BG.BUDGETEXPENSETYPENAME,
+                    CC.NAME AS CATEGORYNAME,
+                    BG.DEPARTMENTNAME,
+                    BG.DEPARTMENTID,
+                    BG.BUDGET_EXPENSE_TYPE_ID,
+                    BG.BUDGETSTATUS
+        FROM OAGWBG_V_BUDGETGOVERNMENT BG
+        LEFT JOIN OAGWBG_V_EXT_OAGINV_CATEGORY_CODES_V CC
+            ON CC.ID = CASE
+                    WHEN NVL(BG.DUMMY_CATEGORY, 0) <> 0 THEN BG.DUMMY_CATEGORY
+                    ELSE BG.CATEGORYID
+            END
+        WHERE BG.BUDGETFORMTYPEID = 1
+          AND BG.BUDGETREQUESTID != 0
+          AND BG.BUDGETSTATUS NOT IN ('X')
+          AND BG.BUDGETREQUESTID IN (SELECT ob2.ID FROM OAGWBG_BUDGETREQUEST ob2)
+          AND NOT EXISTS (
+                                SELECT 1
+                                FROM OAGWBG_BUDGETREQUEST BR
+                                WHERE BR.PARENTID IS NOT NULL
+                                        AND BR.PARENTID = BG.BUDGETREQUESTID
+                  )
+    )
+)
+SELECT
+    BUDGETYEAR,
+    DEPARTMENTID,
+    DEPARTMENTNAME,
+    COSTCENTERID,
+    COSTCENTERNAME,
+    REGIONID,
+    REGIONNAME,
+    CODE,
+    CATEGORYID,
+    CATEGORYNAME,
+    BUDGETPLANID_ORIG,
+    BUDGETPLANID_DISPLAY,
+    ACTIVITYID,
+    PRODUCTID,
+    PLANNAME,
+    ACTIVITYNAME,
+    PRODUCTNAME,
+    EXPENSETYPENAME,
+    EXPENSETYPEID,
+    BUDGETEXPENSETYPENAME,
+    BUDGETEXPENSETYPEID,
+    CREATEON,
+    CREATEBY,
+    DUMMY_FLAG,
+    REQUESTAMOUNT,
+    ---------------------------------------------------------------- [2]
+    NVL(KEPT_FINAL, 0) AS REQUESTAMOUNT_ADD,
+    DESC_FINAL         AS BUDGETDETAIL,
+    ----------------------------------------------------------------
+    BUDGETDETAILREQUEST,
+    BUDGET_EXPENSE_TYPE_ID,
+    BUDGETSTATUS
+FROM (
+    SELECT
+        BG.BUDGETYEAR,
+        BG.DEPARTMENTID,
+        BG.DEPARTMENTNAME,
+        BG.COSTCENTERID,
+        CC.NAME AS COSTCENTERNAME,
+        CC.REGIONID,
+        CC.REGIONNAME,
+        BG.CODE,
+        BG.CATEGORYID,
+        BG.CATEGORYNAME,
+        BG.BUDGETPLANID AS BUDGETPLANID_ORIG,
+        BCP.BUDGETPLAN_ID AS BUDGETPLANID_DISPLAY,
+        BG.ACTIVITYCODEID AS ACTIVITYID,
+        BG.PRODUCTID,
+        ACT.BUDGETPLANNAME AS PLANNAME,
+        ACT.ACTIVITY_NAME AS ACTIVITYNAME,
+        PROD.NAME AS PRODUCTNAME,
+        BG.EXPENSETYPENAME,
+        BG.EXPENSETYPEID,
+        BG.BUDGETEXPENSETYPENAME,
+        BG.BUDGETEXPENSETYPEID,
+        BG.CREATEON,
+        BG.CREATEBY,
+        BG.DUMMY_FLAG,
+        BG.TOTALREQUESTAMOUNT AS REQUESTAMOUNT,
+        BG.BUDGETDETAIL AS BUDGETDETAILREQUEST,
+        BG.BUDGET_EXPENSE_TYPE_ID,
+        BG.BUDGETSTATUS,
+        ------------------------------------------------------------ [1]
+        -- ก้อนเงินของกลุ่ม : คืนค่าเฉพาะแถวเดียวต่อกลุ่ม แถวอื่นเป็น NULL
+        CASE
+          WHEN BG4.KEPTCENTRAL IS NOT NULL THEN BG4.KEPTCENTRAL
+          WHEN COUNT(BG4.KEPTCENTRAL) OVER (
+                 PARTITION BY BG.BUDGETYEAR, BG.BUDGETFORMTYPEID, BG.CATEGORYID,
+                              BG.PRODUCTID, BG.ACTIVITYCODEID, BG.PROJECTID, BG.BUDGETPLANID
+               ) = 0
+           AND ROW_NUMBER() OVER (
+                 PARTITION BY BG.BUDGETYEAR, BG.BUDGETFORMTYPEID, BG.CATEGORYID,
+                              BG.PRODUCTID, BG.ACTIVITYCODEID, BG.PROJECTID, BG.BUDGETPLANID
+                 ORDER BY NVL2(BG4P.KEPTCENTRAL, 0, 1), BG.ID
+               ) = 1
+          THEN BG4P.KEPTCENTRAL
+        END AS KEPT_FINAL,
+        CASE
+          WHEN BG4.KEPTCENTRAL IS NOT NULL THEN BG4.BUDGETDETAIL
+          WHEN COUNT(BG4.KEPTCENTRAL) OVER (
+                 PARTITION BY BG.BUDGETYEAR, BG.BUDGETFORMTYPEID, BG.CATEGORYID,
+                              BG.PRODUCTID, BG.ACTIVITYCODEID, BG.PROJECTID, BG.BUDGETPLANID
+               ) = 0
+          THEN BG4P.BUDGETDETAIL
+        END AS DESC_FINAL
+        ------------------------------------------------------------
+    FROM LatestBG BG
+    LEFT JOIN (
+        SELECT
+            REF_BUDGETGOVERNMENTID,
+            BUDGETDETAIL,
+            SUM(KEPTCENTRAL) AS KEPTCENTRAL,
+            MAX(ID) KEEP (
+                DENSE_RANK FIRST ORDER BY NVL(KEPTCENTRAL,0) DESC
+            ) AS ID
+        FROM OAGWBG_BUDGETGOVERNMENT
+        WHERE BUDGETGOVERNMENTTYPE = '4'
+        GROUP BY REF_BUDGETGOVERNMENTID, BUDGETDETAIL
+    ) BG4 ON BG.ID = BG4.REF_BUDGETGOVERNMENTID
+    LEFT JOIN OAGWBG_BUDGETREQUEST PBR
+        ON PBR.ID = BG.BUDGETREQUESTID
+    LEFT JOIN (
+        SELECT
+            PBG.BUDGETREQUESTID   AS PARENT_REQID,
+            PBG.RUNNING           AS RUNNING,
+            SUM(B4P.KEPTCENTRAL)  AS KEPTCENTRAL,
+            MAX(B4P.BUDGETDETAIL) AS BUDGETDETAIL
+        FROM OAGWBG_BUDGETGOVERNMENT PBG
+        JOIN OAGWBG_BUDGETGOVERNMENT B4P
+             ON B4P.REF_BUDGETGOVERNMENTID = PBG.ID
+            AND B4P.BUDGETGOVERNMENTTYPE   = '4'
+        WHERE PBG.RUNNING IS NOT NULL
+        GROUP BY PBG.BUDGETREQUESTID, PBG.RUNNING
+        HAVING COUNT(*) = 1
+    ) BG4P
+        ON  BG4P.PARENT_REQID = PBR.PARENTID
+        AND BG4P.RUNNING      = BG.RUNNING
+    LEFT JOIN OAGWBG_V_EXT_OAGGL_COST_CENTER_V CC
+        ON CC.ID = BG.COSTCENTERID
+    LEFT JOIN OAGWBG_V_EXT_OAGGL_BUDGET_CATEGORY_PLAN BCP
+        ON BCP.ID = BG.BUDGETPLANID
+    LEFT JOIN OAGWBG_V_EXT_OAGGL_BUDGET_ACTIVITY_V ACT
+        ON TO_CHAR(ACT.BUDGETPLANID) = TO_CHAR(BG.BUDGETPLANID)
+       AND TO_CHAR(ACT.ACTIVITY_ID) = CASE WHEN TO_CHAR(BG.ACTIVITYCODEID) = '0' THEN '00000' ELSE TO_CHAR(BG.ACTIVITYCODEID) END
+    LEFT JOIN OAGWBG_V_EXT_OAGGL_BUDGET_PRODUCT_V PROD
+        ON TO_CHAR(PROD.BUDGETPLAN_ID) = TO_CHAR(BG.BUDGETPLANID)
+       AND TO_CHAR(PROD.ID) = CASE WHEN TO_CHAR(BG.PRODUCTID) = '0' THEN '00000' ELSE TO_CHAR(BG.PRODUCTID) END
+)
+ORDER BY BUDGETYEAR, EXPENSETYPEID, CATEGORYID;

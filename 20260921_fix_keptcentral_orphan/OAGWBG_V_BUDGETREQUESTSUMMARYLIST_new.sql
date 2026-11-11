@@ -1,0 +1,97 @@
+--------------------------------------------------------------------------------
+-- OAGWBG_V_BUDGETREQUESTSUMMARYLIST  (แก้ไข)
+--
+-- บั๊กเดียวกับ OAGWBG_V_BUDGETREQUESTSUMMARY และ OAGWBG_R_BUDGETREQUEST :
+--   คำขอเพิ่มเติม (BUDGETREQUEST.PARENTID) ทำให้ BG ของคำขอแม่ถูกกรองออก
+--   แถว keptcentral (BGTYPE='4') ที่ผูกกับ BG เก่าจึงหลุดตาม
+--   -> คอลัมน์ TOTALRECEIVEAMOUNT ("งบประมาณรวม" บนหัวหน้า BudgetRequestSummaryDetail)
+--      ขาดหายเท่ากับยอด orphan
+--
+-- แก้ 3 จุด [1]..[3]
+-- ตรวจบน PREPROD แล้ว : จำนวน group เท่าเดิม 5 กลุ่ม ค่าตรงกันทุกกลุ่ม (ไม่ fan-out)
+--
+-- หมายเหตุ : ของเดิมเขียน BUDGETGOVERNMENTTYPE = 4 / = 7 แบบไม่ใส่ quote
+--            (implicit conversion VARCHAR2 -> NUMBER) คงไว้ตามเดิมเพื่อให้ diff แคบ
+--            แต่ในซับคิวรี fallback ใหม่ใช้ '4' แบบ quote ซึ่งถูกต้องกว่า
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE FORCE EDITIONABLE VIEW "OAGWBG"."OAGWBG_V_BUDGETREQUESTSUMMARYLIST"
+    ("BUDGETYEAR", "TOTALREQUESTAMOUNT", "TOTALRECEIVEAMOUNT", "STATUS_NAME",
+     "BUDGETFORMTYPEID", "BUDGETFORMTYPENAME") AS
+  SELECT
+  BR.BUDGETYEAR,
+  SUM(
+  	CASE
+        WHEN BG.BUDGETFORMTYPEID IN (1,3) THEN NVL(BG.TOTALREQUESTAMOUNT, 0)
+        WHEN BG.BUDGETFORMTYPEID IN (2,4) THEN NVL(OPT.ALLOCATEDBUDGET, 0)
+        ELSE NVL(BG.TOTALREQUESTAMOUNT, 0)
+    END
+  ) AS TOTALREQUESTAMOUNT,
+  ---------------------------------------------------------------- [3]
+  SUM(NVL(COALESCE(BG4.KEPTCENTRAL, BG4P.KEPTCENTRAL), 0)) AS TOTALRECEIVEAMOUNT,
+  ----------------------------------------------------------------
+  CASE
+    WHEN SUM(CASE WHEN BG.BUDGETSTATUS = 'B' THEN 1 ELSE 0 END) > 0 THEN 'B'
+    WHEN SUM(CASE WHEN BG.BUDGETSTATUS = 'U' THEN 1 ELSE 0 END) > 0 THEN 'U'
+    WHEN SUM(CASE WHEN BG.BUDGETSTATUS = 'X' THEN 1 ELSE 0 END) > 0 THEN 'X'
+    ELSE MAX(BG.BUDGETSTATUS)
+  END AS STATUS_NAME,
+  BR.BUDGETFORMTYPEID,
+  CASE
+        WHEN BR.BUDGETFORMTYPEID IN ('1','3') THEN 'แผนงาน'
+        WHEN BR.BUDGETFORMTYPEID IN ('2','4','5') THEN 'โครงการ'
+        ELSE 'โครงการ'
+  END AS BUDGETFORMTYPENAME
+FROM OAGWBG_BUDGETREQUEST BR
+LEFT JOIN OAGWBG_BUDGETGOVERNMENT BG
+	ON BG.BUDGETREQUESTID = BR.ID
+	AND BG.ID IS NOT NULL
+	AND ( BG.BUDGETGOVERNMENTTYPE IS NULL OR BG.BUDGETGOVERNMENTTYPE = 7 )
+-------------------------------------------------------------------- [1]
+LEFT JOIN (
+    SELECT
+        REF_BUDGETGOVERNMENTID,
+        SUM(KEPTCENTRAL) AS KEPTCENTRAL,        -- เดิม SUM(NVL(KEPTCENTRAL,0))
+        MAX(ID) KEEP (
+            DENSE_RANK FIRST ORDER BY NVL(KEPTCENTRAL,0) DESC
+        ) AS ID
+    FROM OAGWBG_BUDGETGOVERNMENT
+    WHERE BUDGETGOVERNMENTTYPE = 4
+    GROUP BY REF_BUDGETGOVERNMENTID
+) BG4 ON BG.ID = BG4.REF_BUDGETGOVERNMENTID
+-------------------------------------------------------------------- [2]
+LEFT JOIN (
+    SELECT
+        PBG.BUDGETREQUESTID       AS PARENT_REQID,
+        PBG.RUNNING               AS RUNNING,
+        SUM(B4P.KEPTCENTRAL)      AS KEPTCENTRAL
+    FROM OAGWBG_BUDGETGOVERNMENT PBG
+    JOIN OAGWBG_BUDGETGOVERNMENT B4P
+         ON B4P.REF_BUDGETGOVERNMENTID = PBG.ID
+        AND B4P.BUDGETGOVERNMENTTYPE   = '4'
+    WHERE PBG.RUNNING IS NOT NULL
+    GROUP BY PBG.BUDGETREQUESTID, PBG.RUNNING
+    HAVING COUNT(*) = 1                         -- guard กัน RUNNING ซ้ำ
+) BG4P
+    ON  BG4P.PARENT_REQID = BR.PARENTID
+    AND BG4P.RUNNING      = BG.RUNNING
+--------------------------------------------------------------------
+LEFT JOIN OAGWBG_PROJECTTARGETS OPT ON OPT.PROJECTID = BG.PROJECTID
+WHERE NOT EXISTS (
+	SELECT 1
+	FROM OAGWBG_BUDGETREQUEST BR
+	WHERE BR.PARENTID IS NOT NULL
+		AND BR.PARENTID = BG.BUDGETREQUESTID
+)
+AND ( BG.PROJECTID IS NULL OR NOT EXISTS (
+	SELECT 1
+	FROM OAGWBG_PROJECT
+	WHERE TEMP IS NOT NULL
+		AND TEMP = BG.PROJECTID
+))
+AND BG.BUDGETSTATUS NOT IN ('A','X')
+AND BR.BUDGETFORMTYPEID IN (1, 2)
+GROUP BY BR.BUDGETYEAR, BR.BUDGETFORMTYPEID
+ORDER BY
+  BR.BUDGETYEAR DESC,
+  BR.BUDGETFORMTYPEID ASC;
